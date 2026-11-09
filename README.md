@@ -7,6 +7,15 @@ Kernel patches, userspace configuration and small programs that make a Redmi Not
 This is one person's test phone, not a maintained port. Everything here was checked on that one device
 (2 GB / 16 GB variant).
 
+<p align="center">
+  <img src="docs/img/speaker.png" width="300" alt="Terminal on the phone: kernel 7.2.3, Cortex-A53 and Cortex-A72, 6 cores, sound card xiaomi-kenzo, default output the speaker, headset jack off">
+  &nbsp;
+  <img src="docs/img/headphones.png" width="300" alt="The same with headphones plugged in: default output the headphones, headset jack on">
+</p>
+<p align="center"><sub>Left: nothing in the jack — sound goes to the speaker. Right: headphones plugged in — PipeWire
+moved to them by itself. On top the jwm panel with the battery indicator and the keyboard and rotate buttons; at the
+bottom the svkbd on-screen keyboard.</sub></p>
+
 ## Status (2026-11-10)
 
 | | status | where |
