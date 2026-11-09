@@ -1,0 +1,101 @@
+From 439744a70a41c691f9342d640c9e3938bed3ac49 Mon Sep 17 00:00:00 2001
+From: Magicxavi <rolfpeterkesche@googlemail.com>
+Date: Fri, 11 Sep 2026 22:20:35 +0300
+Subject: [PATCH] arm64: dts: qcom: msm8956-xiaomi-kenzo: Switch to
+ SLIMBUS_0_RX and update audio routing
+
+- MSM8956 Hexagon DSP does not support SLIMBUS_6_RX (0x400c); use native
+  SLIMBUS_0_RX (0x4000) for playback.
+- Update codec DAI to AIF1_PB to match SLIMBUS_0_RX.
+- Route external speaker amplifier to LINEOUT4 instead of LINEOUT1/2.
+- Set sound card model to xiaomi-kenzo.
+- Explicitly set slimbus_dev_id and map all channels in q6afe_slim_port_prepare.
+
+[ryzed, 2026-11-08: routing and widgets as running on the phone during the
+r14 sound bring-up - speaker amplifier fed from LINEOUT1-4 (stock kenzo uses
+LINEOUT4 only; the others are kept for the experiments), both amplifier
+outputs to the speaker, earpiece on EAR, headphones on HPHL/HPHR.]
+---
+--- a/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
++++ b/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
+@@ -526,18 +526,35 @@
+ 
+ &sound {
+ 	compatible = "qcom,apq8096-sndcard";
+-	model = "apq8096";
++	model = "xiaomi-kenzo";
+ 
+ 	audio-routing =
+ 		"RX_BIAS", "MCLK",
+ 		"Speaker Amp INL", "LINEOUT1",
+-		"Speaker Amp INR", "LINEOUT2",
++		"Speaker Amp INL", "LINEOUT2",
++		"Speaker Amp INR", "LINEOUT3",
++		"Speaker Amp INR", "LINEOUT4",
+ 		"Speaker", "Speaker Amp OUTL",
+-		"Speaker", "Speaker Amp OUTR";
++		"Speaker", "Speaker Amp OUTR",
++		"AMIC1", "MIC BIAS1",
++		"AMIC1", "Handset Mic",
++		"AMIC2", "MIC BIAS2",
++		"AMIC2", "Headset Mic",
++		"AMIC3", "MIC BIAS3",
++		"AMIC3", "Secondary Mic",
++		"Earpiece", "EAR",
++		"Headphones", "HPHL",
++		"Headphones", "HPHR";
+ 
+ 	aux-devs = <&speaker_amp>;
+ 
+-	widgets = "Speaker", "Speaker";
++	widgets =
++		"Speaker", "Speaker",
++		"Microphone", "Handset Mic",
++		"Microphone", "Headset Mic",
++		"Microphone", "Secondary Mic",
++		"Speaker", "Earpiece",
++		"Headphone", "Headphones";
+ 	pin-switches = "Speaker";
+ 
+ 	status = "okay";
+@@ -566,7 +583,7 @@
+ 	slim-dai-link {
+ 		link-name = "SLIM Playback";
+ 		cpu {
+-			sound-dai = <&q6afedai SLIMBUS_6_RX>;
++			sound-dai = <&q6afedai SLIMBUS_0_RX>;
+ 		};
+ 
+ 		platform {
+@@ -574,7 +591,7 @@
+ 		};
+ 
+ 		codec {
+-			sound-dai = <&wcd9335 AIF4_PB>;
++			sound-dai = <&wcd9335 AIF1_PB>;
+ 		};
+ 	};
+ 
+--- a/sound/soc/qcom/qdsp6/q6afe.c
++++ b/sound/soc/qcom/qdsp6/q6afe.c
+@@ -1328,16 +1328,16 @@
+ 			     struct q6afe_slim_cfg *cfg)
+ {
+ 	union afe_port_config *pcfg = &port->port_cfg;
++	int i;
+ 
+ 	pcfg->slim_cfg.sb_cfg_minor_version = AFE_API_VERSION_SLIMBUS_CONFIG;
++	pcfg->slim_cfg.slimbus_dev_id = 0;
+ 	pcfg->slim_cfg.sample_rate = cfg->sample_rate;
+ 	pcfg->slim_cfg.bit_width = cfg->bit_width;
+ 	pcfg->slim_cfg.num_channels = cfg->num_channels;
+ 	pcfg->slim_cfg.data_format = cfg->data_format;
+-	pcfg->slim_cfg.shared_ch_mapping[0] = cfg->ch_mapping[0];
+-	pcfg->slim_cfg.shared_ch_mapping[1] = cfg->ch_mapping[1];
+-	pcfg->slim_cfg.shared_ch_mapping[2] = cfg->ch_mapping[2];
+-	pcfg->slim_cfg.shared_ch_mapping[3] = cfg->ch_mapping[3];
++	for (i = 0; i < AFE_PORT_MAX_AUDIO_CHAN_CNT; i++)
++		pcfg->slim_cfg.shared_ch_mapping[i] = cfg->ch_mapping[i];
+ 
+ }
+ EXPORT_SYMBOL_GPL(q6afe_slim_port_prepare);

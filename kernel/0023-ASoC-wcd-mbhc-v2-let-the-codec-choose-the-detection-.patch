@@ -1,0 +1,146 @@
+From 555d4843f5c66fd6eeebd5ce995237f53c5f8049 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Lajosh=C3=A1zi=2C=20L=C3=A1szl=C3=B3=20Gergely?=
+ <lajoshazilg@gmail.com>
+Date: Sun, 30 Aug 2026 08:06:24 +0200
+Subject: [PATCH 23/27] ASoC: wcd-mbhc-v2: let the codec choose the detection
+ logic
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Both backends now exist, so make wcd_mbhc_init() take the choice as an
+argument instead of assigning mbhc_detection_logic a constant. That field
+has been in struct wcd_mbhc since the ADC path was added, and this is the
+first time it carries information.
+
+The five codecs already using this file all have an MBHC ADC and pass
+WCD_DETECTION_ADC, so nothing changes for them.
+
+Signed-off-by: Lajosházi, László Gergely <lajoshazilg@gmail.com>
+Assisted-by: Claude:claude-opus-5
+---
+ sound/soc/codecs/pm4125.c      | 4 +++-
+ sound/soc/codecs/wcd-mbhc-v2.c | 7 ++++---
+ sound/soc/codecs/wcd-mbhc-v2.h | 2 ++
+ sound/soc/codecs/wcd934x.c     | 3 ++-
+ sound/soc/codecs/wcd937x.c     | 3 ++-
+ sound/soc/codecs/wcd938x.c     | 3 ++-
+ sound/soc/codecs/wcd939x.c     | 3 ++-
+ 7 files changed, 17 insertions(+), 8 deletions(-)
+
+diff --git a/sound/soc/codecs/pm4125.c b/sound/soc/codecs/pm4125.c
+index 29655175e..759423e9a 100644
+--- a/sound/soc/codecs/pm4125.c
++++ b/sound/soc/codecs/pm4125.c
+@@ -1012,7 +1012,9 @@ static int pm4125_mbhc_init(struct snd_soc_component *component)
+ 
+ 	intr_ids->hph_right_ocp = regmap_irq_get_virq(pm4125->irq_chip, PM4125_IRQ_HPHR_OCP_INT);
+ 
+-	pm4125->wcd_mbhc = wcd_mbhc_init(component, &mbhc_cb, intr_ids, pm4125_mbhc_fields, false);
++	pm4125->wcd_mbhc = wcd_mbhc_init(component, &mbhc_cb, intr_ids,
++					 pm4125_mbhc_fields,
++					 WCD_DETECTION_ADC, false);
+ 	if (IS_ERR(pm4125->wcd_mbhc))
+ 		return PTR_ERR(pm4125->wcd_mbhc);
+ 
+diff --git a/sound/soc/codecs/wcd-mbhc-v2.c b/sound/soc/codecs/wcd-mbhc-v2.c
+index 3f6b17845..44a39f866 100644
+--- a/sound/soc/codecs/wcd-mbhc-v2.c
++++ b/sound/soc/codecs/wcd-mbhc-v2.c
+@@ -2012,6 +2012,7 @@ struct wcd_mbhc *wcd_mbhc_init(struct snd_soc_component *component,
+ 			       const struct wcd_mbhc_cb *mbhc_cb,
+ 			       const struct wcd_mbhc_intr *intr_ids,
+ 			       const struct wcd_mbhc_field *fields,
++			       enum wcd_mbhc_detect_logic detect_logic,
+ 			       bool impedance_det_en)
+ {
+ 	struct device *dev = component->dev;
+@@ -2032,9 +2033,9 @@ struct wcd_mbhc *wcd_mbhc_init(struct snd_soc_component *component,
+ 	mbhc->intr_ids = intr_ids;
+ 	mbhc->mbhc_cb = mbhc_cb;
+ 	mbhc->fields = fields;
+-	mbhc->mbhc_detection_logic = WCD_DETECTION_ADC;
+-	mbhc->mbhc_fn = (mbhc->mbhc_detection_logic == WCD_DETECTION_ADC) ?
+-			&wcd_mbhc_adc_fn : &wcd_mbhc_legacy_fn;
++	mbhc->mbhc_detection_logic = detect_logic;
++	mbhc->mbhc_fn = (detect_logic == WCD_DETECTION_ADC) ? &wcd_mbhc_adc_fn
++							    : &wcd_mbhc_legacy_fn;
+ 
+ 	if (mbhc_cb->compute_impedance)
+ 		mbhc->impedance_detect = impedance_det_en;
+diff --git a/sound/soc/codecs/wcd-mbhc-v2.h b/sound/soc/codecs/wcd-mbhc-v2.h
+index a5d52b964..6a780234c 100644
+--- a/sound/soc/codecs/wcd-mbhc-v2.h
++++ b/sound/soc/codecs/wcd-mbhc-v2.h
+@@ -280,6 +280,7 @@ struct wcd_mbhc *wcd_mbhc_init(struct snd_soc_component *component,
+ 		      const struct wcd_mbhc_cb *mbhc_cb,
+ 		      const struct wcd_mbhc_intr *mbhc_cdc_intr_ids,
+ 		      const struct wcd_mbhc_field *fields,
++		      enum wcd_mbhc_detect_logic detect_logic,
+ 		      bool impedance_det_en);
+ int wcd_mbhc_get_impedance(struct wcd_mbhc *mbhc, uint32_t *zl,
+ 			   uint32_t *zr);
+@@ -301,6 +302,7 @@ static inline struct wcd_mbhc *wcd_mbhc_init(struct snd_soc_component *component
+ 		      const struct wcd_mbhc_cb *mbhc_cb,
+ 		      const struct wcd_mbhc_intr *mbhc_cdc_intr_ids,
+ 		      const struct wcd_mbhc_field *fields,
++		      enum wcd_mbhc_detect_logic detect_logic,
+ 		      bool impedance_det_en)
+ {
+ 	return ERR_PTR(-ENOTSUPP);
+diff --git a/sound/soc/codecs/wcd934x.c b/sound/soc/codecs/wcd934x.c
+index bc41a1466..73e46978e 100644
+--- a/sound/soc/codecs/wcd934x.c
++++ b/sound/soc/codecs/wcd934x.c
+@@ -2967,7 +2967,8 @@ static int wcd934x_mbhc_init(struct snd_soc_component *component)
+ 	intr_ids->hph_right_ocp = regmap_irq_get_virq(data->irq_data,
+ 						      WCD934X_IRQ_HPH_PA_OCPR_FAULT);
+ 
+-	wcd->mbhc = wcd_mbhc_init(component, &mbhc_cb, intr_ids, wcd_mbhc_fields, true);
++	wcd->mbhc = wcd_mbhc_init(component, &mbhc_cb, intr_ids, wcd_mbhc_fields,
++				  WCD_DETECTION_ADC, true);
+ 	if (IS_ERR(wcd->mbhc)) {
+ 		wcd->mbhc = NULL;
+ 		return -EINVAL;
+diff --git a/sound/soc/codecs/wcd937x.c b/sound/soc/codecs/wcd937x.c
+index e0169e783..ab0093802 100644
+--- a/sound/soc/codecs/wcd937x.c
++++ b/sound/soc/codecs/wcd937x.c
+@@ -2026,7 +2026,8 @@ static int wcd937x_mbhc_init(struct snd_soc_component *component)
+ 	intr_ids->hph_right_ocp = regmap_irq_get_virq(wcd937x->irq_chip,
+ 						      WCD937X_IRQ_HPHR_OCP_INT);
+ 
+-	wcd937x->wcd_mbhc = wcd_mbhc_init(component, &mbhc_cb, intr_ids, wcd_mbhc_fields, true);
++	wcd937x->wcd_mbhc = wcd_mbhc_init(component, &mbhc_cb, intr_ids,
++					  wcd_mbhc_fields, WCD_DETECTION_ADC, true);
+ 	if (IS_ERR(wcd937x->wcd_mbhc))
+ 		return PTR_ERR(wcd937x->wcd_mbhc);
+ 
+diff --git a/sound/soc/codecs/wcd938x.c b/sound/soc/codecs/wcd938x.c
+index c69e18667..3ba7d1867 100644
+--- a/sound/soc/codecs/wcd938x.c
++++ b/sound/soc/codecs/wcd938x.c
+@@ -2564,7 +2564,8 @@ static int wcd938x_mbhc_init(struct snd_soc_component *component)
+ 	intr_ids->hph_right_ocp = regmap_irq_get_virq(wcd938x->irq_chip,
+ 						     WCD938X_IRQ_HPHR_OCP_INT);
+ 
+-	wcd938x->wcd_mbhc = wcd_mbhc_init(component, &mbhc_cb, intr_ids, wcd_mbhc_fields, true);
++	wcd938x->wcd_mbhc = wcd_mbhc_init(component, &mbhc_cb, intr_ids,
++					  wcd_mbhc_fields, WCD_DETECTION_ADC, true);
+ 	if (IS_ERR(wcd938x->wcd_mbhc))
+ 		return PTR_ERR(wcd938x->wcd_mbhc);
+ 
+diff --git a/sound/soc/codecs/wcd939x.c b/sound/soc/codecs/wcd939x.c
+index 010d12466..04967b546 100644
+--- a/sound/soc/codecs/wcd939x.c
++++ b/sound/soc/codecs/wcd939x.c
+@@ -2488,7 +2488,8 @@ static int wcd939x_mbhc_init(struct snd_soc_component *component)
+ 	intr_ids->hph_right_ocp = regmap_irq_get_virq(wcd939x->irq_chip,
+ 						      WCD939X_IRQ_HPHR_OCP_INT);
+ 
+-	wcd939x->wcd_mbhc = wcd_mbhc_init(component, &mbhc_cb, intr_ids, wcd_mbhc_fields, true);
++	wcd939x->wcd_mbhc = wcd_mbhc_init(component, &mbhc_cb, intr_ids,
++					  wcd_mbhc_fields, WCD_DETECTION_ADC, true);
+ 	if (IS_ERR(wcd939x->wcd_mbhc))
+ 		return PTR_ERR(wcd939x->wcd_mbhc);
+ 

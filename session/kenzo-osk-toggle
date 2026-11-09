@@ -1,0 +1,40 @@
+#!/bin/sh
+# Показать или спрятать экранную клавиатуру svkbd. С аргументом "on" — только включить.
+# jwm читает занятую клавиатурой полосу только при появлении окна, поэтому после
+# показа и скрытия его перезапускаем (jwm -restart): окна программ при этом не закрываются,
+# а развёрнутые перекладываются под новое свободное место.
+
+relayout() {
+    pidof jwm >/dev/null && jwm -restart
+}
+
+# Процесс ищем по имени программы (pidof), а не по тексту командной строки:
+# pgrep -f находит и чужие команды, где это слово просто упомянуто.
+pid=$(pidof svkbd-mobile-intl)
+if [ -n "$pid" ]; then
+    [ "$1" = on ] && exit 0
+    kill $pid
+    sleep 0.3
+    relayout
+    exit 0
+fi
+
+# setsid — чтобы клавиатура не зависела от терминала, из которого её запустили.
+setsid svkbd-mobile-intl -d -l en,symbols,navigation,ru -s en -fn "DejaVu Sans:bold:size=24" >/dev/null 2>&1 &
+
+# Прижимаем окно клавиатуры к низу экрана и объявляем полосу под ней занятой.
+win=
+for i in 1 2 3 4 5 6 7 8 9 10; do
+    win=$(xdotool search --onlyvisible --class svkbd | head -1)
+    [ -n "$win" ] && break
+    sleep 0.3
+done
+[ -n "$win" ] || exit 1
+eval "$(xdotool getdisplaygeometry --shell)"
+screen_w=$WIDTH
+screen_h=$HEIGHT
+eval "$(xdotool getwindowgeometry --shell "$win")"
+xdotool windowmove "$win" 0 $((screen_h - HEIGHT))
+xprop -id "$win" -f _NET_WM_STRUT_PARTIAL 32c -set _NET_WM_STRUT_PARTIAL "0, 0, 0, $HEIGHT, 0, 0, 0, 0, 0, 0, 0, $((screen_w - 1))"
+xprop -id "$win" -f _NET_WM_STRUT 32c -set _NET_WM_STRUT "0, 0, 0, $HEIGHT"
+relayout

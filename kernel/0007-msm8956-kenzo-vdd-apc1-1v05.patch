@@ -1,0 +1,23 @@
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Subject: [PATCH 7/8] arm64: dts: qcom: msm8956-xiaomi-kenzo: vdd_apc1 min 1.05 V
+
+Assisted-by: Claude:claude-opus-5.5
+
+---
+--- a/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
++++ b/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
+@@ -198,8 +198,12 @@
+ 	/* Cluster 1 supply */
+ 	pm8004_s2: s2 {
+ 		/* regulator-min-microvolt = <500000>; */
+-		/* Set .95V to prevent unstabilities until CPR for this SoC is done */
+-		regulator-min-microvolt = <950000>;
++		/*
++		 * Без CPR напряжение кластера A72 фиксированное. 0,95 В мало: Android
++		 * (apc1_corner) даёт 1190,4 МГц до 1,05 В, а на 0,95 В kenzo падал.
++		 * 1,05 В — как у кластера A53 (vdd_apc0) от загрузчика.
++		 */
++		regulator-min-microvolt = <1050000>;
+ 		regulator-max-microvolt = <1165000>;
+ 		regulator-name = "vdd_apc1";
+ 		/* Set always on until the CPU PLL is done */

@@ -1,0 +1,31 @@
+# Xiaomi Redmi Note 3 Pro (kenzo): UCM and WirePlumber config for the built-in audio (WCD9335 on SLIMbus,
+# ASoC card apq8096 "xiaomi-kenzo"; needs linux-postmarketos-qcom-msm8956 r17+ with the kenzo audio series:
+# headset jack, no S24_LE; pmbootstrap does not resolve a versioned kernel dependency, so it is not declared).
+# Sources (copy them next to this APKBUILD): audio/ucm/Xiaomi/kenzo/*.conf, audio/wireplumber/51-kenzo-alsa.conf,
+# audio/wireplumber/kenzo-jack-profile.lua.
+pkgname=kenzo-audio-config
+pkgver=1
+pkgrel=2
+pkgdesc="Xiaomi Redmi Note 3 Pro (kenzo): ALSA UCM and WirePlumber config for the built-in audio"
+url="https://github.com/ryzed/redmi-note-3-pro-mainline"
+arch="noarch"
+license="MIT"
+depends="alsa-ucm-conf"
+options="!check"
+source="
+	kenzo.conf
+	HiFi.conf
+	51-kenzo-alsa.conf
+	kenzo-jack-profile.lua
+"
+
+package() {
+	install -Dm644 "$srcdir"/kenzo.conf "$pkgdir"/usr/share/alsa/ucm2/Xiaomi/kenzo/kenzo.conf
+	install -Dm644 "$srcdir"/HiFi.conf "$pkgdir"/usr/share/alsa/ucm2/Xiaomi/kenzo/HiFi.conf
+	mkdir -p "$pkgdir"/usr/share/alsa/ucm2/conf.d/apq8096
+	ln -s ../../Xiaomi/kenzo/kenzo.conf "$pkgdir"/usr/share/alsa/ucm2/conf.d/apq8096/xiaomi-kenzo.conf
+	install -Dm644 "$srcdir"/51-kenzo-alsa.conf \
+		"$pkgdir"/usr/share/wireplumber/wireplumber.conf.d/51-kenzo-alsa.conf
+	install -Dm644 "$srcdir"/kenzo-jack-profile.lua \
+		"$pkgdir"/usr/share/wireplumber/scripts/kenzo-jack-profile.lua
+}

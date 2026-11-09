@@ -1,0 +1,86 @@
+From 96b0877017eeeaa53bcec61c81b5ec8475246835 Mon Sep 17 00:00:00 2001
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 21:03:41 +0000
+Subject: [PATCH 19/27] ASoC: qcom: q6asm-dai: drop S24_LE
+
+MULTI_CHANNEL_PCM_V2 expects 24 significant bits in the top of a 32-bit
+word; ALSA S24_LE keeps them in the low three bytes, so the ADSP read an
+S24_LE stream 256 times too small (~48 dB quieter, measured on kenzo as
+38.7 dB through the speaker compander). There is no field in the V2 media
+format block that can describe the ALSA layout, so stop advertising
+S24_LE and let userspace use S16_LE.
+
+This is the minimal variant: it gives no 24-bit playback. The alternative
+(0001 + 0002) offers S32_LE with 24 significant bits instead.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+ sound/soc/qcom/qdsp6/q6asm-dai.c | 23 ++++++++++++-----------
+ 1 file changed, 12 insertions(+), 11 deletions(-)
+
+diff --git a/sound/soc/qcom/qdsp6/q6asm-dai.c b/sound/soc/qcom/qdsp6/q6asm-dai.c
+index 4f09fdd40..1052dff69 100644
+--- a/sound/soc/qcom/qdsp6/q6asm-dai.c
++++ b/sound/soc/qcom/qdsp6/q6asm-dai.c
+@@ -89,8 +89,7 @@ static const struct snd_pcm_hardware q6asm_dai_hardware_capture = {
+ 				SNDRV_PCM_INFO_MMAP_VALID |
+ 				SNDRV_PCM_INFO_INTERLEAVED |
+ 				SNDRV_PCM_INFO_PAUSE | SNDRV_PCM_INFO_RESUME),
+-	.formats =              (SNDRV_PCM_FMTBIT_S16_LE |
+-				SNDRV_PCM_FMTBIT_S24_LE),
++	.formats =              SNDRV_PCM_FMTBIT_S16_LE,
+ 	.rates =                SNDRV_PCM_RATE_8000_48000,
+ 	.rate_min =             8000,
+ 	.rate_max =             48000,
+@@ -112,8 +111,7 @@ static const struct snd_pcm_hardware q6asm_dai_hardware_playback = {
+ 				SNDRV_PCM_INFO_NO_REWINDS | SNDRV_PCM_INFO_SYNC_APPLPTR |
+ 				SNDRV_PCM_INFO_INTERLEAVED |
+ 				SNDRV_PCM_INFO_PAUSE | SNDRV_PCM_INFO_RESUME),
+-	.formats =              (SNDRV_PCM_FMTBIT_S16_LE |
+-				SNDRV_PCM_FMTBIT_S24_LE),
++	.formats =              SNDRV_PCM_FMTBIT_S16_LE,
+ 	.rates =                SNDRV_PCM_RATE_8000_192000,
+ 	.rate_min =             8000,
+ 	.rate_max =             192000,
+@@ -138,8 +136,7 @@ static const struct snd_pcm_hardware q6asm_dai_hardware_playback = {
+ 				  SNDRV_PCM_RATE_96000 |		\
+ 				  SNDRV_PCM_RATE_176400 |		\
+ 				  SNDRV_PCM_RATE_192000),		\
+-			.formats = (SNDRV_PCM_FMTBIT_S16_LE |		\
+-					SNDRV_PCM_FMTBIT_S24_LE),	\
++			.formats = SNDRV_PCM_FMTBIT_S16_LE,		\
+ 			.channels_min = 1,				\
+ 			.channels_max = 8,				\
+ 			.rate_min =     8000,				\
+@@ -150,8 +147,7 @@ static const struct snd_pcm_hardware q6asm_dai_hardware_playback = {
+ 			.rates = (SNDRV_PCM_RATE_8000_48000 |		\
+ 				  SNDRV_PCM_RATE_12000 |		\
+ 				  SNDRV_PCM_RATE_24000),		\
+-			.formats = (SNDRV_PCM_FMTBIT_S16_LE |		\
+-				    SNDRV_PCM_FMTBIT_S24_LE),		\
++			.formats = SNDRV_PCM_FMTBIT_S16_LE,		\
+ 			.channels_min = 1,				\
+ 			.channels_max = 4,				\
+ 			.rate_min =     8000,				\
+@@ -502,13 +498,18 @@ static int q6asm_dai_hw_params(struct snd_soc_component *component,
+ 	prtd->pcm_size = params_buffer_bytes(params);
+ 	prtd->periods = params_periods(params);
+ 
++	/*
++	 * Do not advertise S24_LE: MULTI_CHANNEL_PCM_V2 expects the 24
++	 * significant bits at the top of a 32-bit word, while S24_LE keeps
++	 * them in the low three bytes. Such a stream played 48 dB too quiet.
++	 * Stay at S16_LE until the 24-bit layout is described properly.
++	 */
+ 	switch (params_format(params)) {
+ 	case SNDRV_PCM_FORMAT_S16_LE:
+ 		prtd->bits_per_sample = 16;
+ 		break;
+-	case SNDRV_PCM_FORMAT_S24_LE:
+-		prtd->bits_per_sample = 24;
+-		break;
++	default:
++		return -EINVAL;
+ 	}
+ 
+ 	return 0;

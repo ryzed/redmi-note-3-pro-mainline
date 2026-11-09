@@ -1,0 +1,40 @@
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Subject: [PATCH] arm64: dts: qcom: msm8956-xiaomi-kenzo: enable Venus
+
+Enable Venus with its own 5 MB firmware region at 0x8f600000 (on kenzo the reference-board region
+at 0x8da00000 is covered by the larger qseecom) and firmware qcom/msm8956/venus-v1.mdt.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+--- a/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
++++ b/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
+@@ -83,6 +83,16 @@
+ 		/delete-node/ memory@8da00000;
+ 		qseecom@8dd00000 {
+ 			reg = <0x0 0x8dd00000 0x0 0x1900000>;
++			no-map;
++		};
++
++		/*
++		 * Прошивке видеоблока нужно 5 МБ (она перемещаемая). В Android ей выделялось 5 МБ
++		 * где угодно ниже 0x90000000, а область эталонной платы (0x8da00000) у kenzo
++		 * перекрыта увеличенным qseecom, поэтому берём память сразу за ним.
++		 */
++		venus_kenzo_mem: memory@8f600000 {
++			reg = <0x0 0x8f600000 0x0 0x500000>;
+ 			no-map;
+ 		};
+ 	};
+@@ -489,6 +499,12 @@
+ };
+ 
+ 
++&venus {
++	firmware-name = "qcom/msm8956/venus-v1.mdt";
++	memory-region = <&venus_kenzo_mem>;
++	status = "okay";
++};
++
+ &wcnss {
+ 	vddpx-supply = <&pm8950_l5>;
+ 	status = "okay";

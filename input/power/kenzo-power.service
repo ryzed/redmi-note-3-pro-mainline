@@ -1,0 +1,22 @@
+# Кнопка питания: короткое нажатие гасит и будит экран, удержание открывает
+# меню jwm. Исходник — input/power в репозитории github.com/ryzed/redmi-note-3-pro-mainline.
+#
+# Демон забирает /dev/input/kenzo-pwrkey себе (EVIOCGRAB), поэтому X и
+# logind кнопку не видят. Спящего режима на этом ядре нет — гасим экран
+# через DPMS.
+#
+# При загрузке демон стартует раньше X и падает, пока X не поднимется;
+# при перезапуске X — тоже. Предел запусков снят (StartLimitIntervalSec=0):
+# иначе после пяти неудач за 10 с systemd бросил бы попытки.
+[Unit]
+Description=kenzo-power — кнопка питания как на телефоне
+StartLimitIntervalSec=0
+
+[Service]
+Environment=DISPLAY=:0
+ExecStart=/usr/local/bin/kenzo-power -v
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=default.target

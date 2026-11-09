@@ -1,0 +1,28 @@
+From 27167ca3534188a4e186de0b92ea24cbe8755328 Mon Sep 17 00:00:00 2001
+From: Magicxavi <rolfpeterkesche@googlemail.com>
+Date: Fri, 11 Sep 2026 17:04:56 +0300
+Subject: [PATCH] remoteproc: qcom: pas: Add MSM8956 and MSM8976 ADSP support
+
+Add compatible strings "qcom,msm8956-adsp-pil" and "qcom,msm8976-adsp-pil"
+pointing to msm8996_adsp_resource to load Hexagon ADSP firmware (adsp.mdt)
+on MSM8956/MSM8976 platforms.
+
+Signed-off-by: Magicxavi <rolfpeterkesche@googlemail.com>
+---
+ drivers/remoteproc/qcom_q6v5_pas.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/remoteproc/qcom_q6v5_pas.c b/drivers/remoteproc/qcom_q6v5_pas.c
+index 808e9609988d..46b9bc1bbead 100644
+--- a/drivers/remoteproc/qcom_q6v5_pas.c
++++ b/drivers/remoteproc/qcom_q6v5_pas.c
+@@ -1580,7 +1580,9 @@ static const struct of_device_id qcom_pas_of_match[] = {
+ 	{ .compatible = "qcom,milos-wpss-pas", .data = &sc7280_wpss_resource },
+ 	{ .compatible = "qcom,msm8226-adsp-pil", .data = &msm8996_adsp_resource },
+ 	{ .compatible = "qcom,msm8953-adsp-pil", .data = &msm8996_adsp_resource },
++	{ .compatible = "qcom,msm8956-adsp-pil", .data = &msm8996_adsp_resource },
+ 	{ .compatible = "qcom,msm8974-adsp-pil", .data = &msm8996_adsp_resource },
++	{ .compatible = "qcom,msm8976-adsp-pil", .data = &msm8996_adsp_resource },
+ 	{ .compatible = "qcom,msm8996-adsp-pil", .data = &msm8996_adsp_resource },
+ 	{ .compatible = "qcom,msm8996-slpi-pil", .data = &msm8996_slpi_resource_init },
+ 	{ .compatible = "qcom,msm8998-adsp-pas", .data = &msm8996_adsp_resource },

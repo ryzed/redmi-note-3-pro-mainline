@@ -1,0 +1,73 @@
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Subject: [PATCH 8/8] arm64: errata: permit Spectre caps on late CPUs (kenzo A72 hotplug)
+
+MSM8956 kenzo: A72 cores (cpu4, cpu7) are brought online after boot, when
+vdd_apc1 is already raised: at early boot the bootloader leaves 0.90 V and
+the system resets. A53 boot CPUs are not affected by Spectre-v2/v3a/v4/BHB,
+so late A72 were refused (capability conflict), and each A72 idle exit hit
+WARN_ON in update_mitigation_state. Used with mitigations=off.
+
+Assisted-by: Claude:claude-opus-5.5
+
+---
+--- a/arch/arm64/kernel/cpu_errata.c
++++ b/arch/arm64/kernel/cpu_errata.c
+@@ -753,7 +753,8 @@
+ 	{
+ 		.desc = "Spectre-v2",
+ 		.capability = ARM64_SPECTRE_V2,
+-		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM,
++		/* kenzo (MSM8956): A72 включаются после загрузки — см. патч 0008 */
++		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM | ARM64_CPUCAP_PERMITTED_FOR_LATE_CPU,
+ 		.matches = has_spectre_v2,
+ 		.cpu_enable = spectre_v2_enable_mitigation,
+ 	},
+@@ -762,7 +763,8 @@
+ 	/* Must come after the Spectre-v2 entry */
+ 		.desc = "Spectre-v3a",
+ 		.capability = ARM64_SPECTRE_V3A,
+-		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM,
++		/* kenzo (MSM8956): A72 включаются после загрузки — см. патч 0008 */
++		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM | ARM64_CPUCAP_PERMITTED_FOR_LATE_CPU,
+ 		.matches = has_spectre_v3a,
+ 		.cpu_enable = spectre_v3a_enable_mitigation,
+ 	},
+@@ -770,14 +772,16 @@
+ 	{
+ 		.desc = "Spectre-v4",
+ 		.capability = ARM64_SPECTRE_V4,
+-		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM,
++		/* kenzo (MSM8956): A72 включаются после загрузки — см. патч 0008 */
++		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM | ARM64_CPUCAP_PERMITTED_FOR_LATE_CPU,
+ 		.matches = has_spectre_v4,
+ 		.cpu_enable = spectre_v4_enable_mitigation,
+ 	},
+ 	{
+ 		.desc = "Spectre-BHB",
+ 		.capability = ARM64_SPECTRE_BHB,
+-		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM,
++		/* kenzo (MSM8956): A72 включаются после загрузки — см. патч 0008 */
++		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM | ARM64_CPUCAP_PERMITTED_FOR_LATE_CPU,
+ 		.matches = is_spectre_bhb_affected,
+ 		.cpu_enable = spectre_bhb_enable_mitigation,
+ 	},
+--- a/arch/arm64/kernel/proton-pack.c
++++ b/arch/arm64/kernel/proton-pack.c
+@@ -47,9 +47,15 @@
+ 		if (new <= state)
+ 			break;
+ 
+-		/* Userspace almost certainly can't deal with this. */
+-		if (WARN_ON(system_capabilities_finalized()))
++		/*
++		 * Userspace almost certainly can't deal with this.
++		 * kenzo (MSM8956): A72 включаются после загрузки (mitigations=off) и
++		 * меняют состояние при каждом выходе из сна — без WARN, один раз.
++		 */
++		if (system_capabilities_finalized()) {
++			pr_warn_once("spectre: mitigation state change on a late CPU ignored\n");
+ 			break;
++		}
+ 	} while (cmpxchg_relaxed(oldp, state, new) != state);
+ }
+ 

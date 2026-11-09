@@ -1,0 +1,65 @@
+From 60a5c5f0e6e9287be78eecf179b92a893e4f1747 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Lajosh=C3=A1zi=2C=20L=C3=A1szl=C3=B3=20Gergely?=
+ <lajoshazilg@gmail.com>
+Date: Sun, 30 Aug 2026 08:06:22 +0200
+Subject: [PATCH 21/27] ASoC: wcd9335: add the headphone OCP fault interrupts
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The codec reports left and right headphone over-current faults on INTR_REG
+0, but the driver's regmap-irq table stopped after the SLIMbus interrupt on
+that register, so neither was reachable. The shared MBHC implementation
+requires both, and jack detection cannot be moved onto it while they are
+missing.
+
+The numbering is reused from the downstream driver, whose interrupt enum
+runs FLL_LOCK_LOSS = 1, HPH_PA_OCPL_FAULT, HPH_PA_OCPR_FAULT, ... up to
+MBHC_ELECT_INS_REM_LEG_DET = 12. That enum agrees with every value this
+header already carries - WCD9335_IRQ_SLIMBUS at 0 and
+WCD9335_IRQ_MBHC_SW_DET at 8 - which is what makes it safe to take the two
+remaining positions from it: index 2 and 3, so INTR_REG 0 bits 2 and 3.
+
+No type registers are declared for them, matching the electrical
+insert/remove interrupts, which the same downstream table also leaves
+without one.
+
+Signed-off-by: Lajosházi, László Gergely <lajoshazilg@gmail.com>
+Assisted-by: Claude:claude-opus-5
+---
+ sound/soc/codecs/wcd9335.c | 8 ++++++++
+ sound/soc/codecs/wcd9335.h | 2 ++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/sound/soc/codecs/wcd9335.c b/sound/soc/codecs/wcd9335.c
+index 845c57751..da79a5d49 100644
+--- a/sound/soc/codecs/wcd9335.c
++++ b/sound/soc/codecs/wcd9335.c
+@@ -5168,6 +5168,14 @@ static const struct regmap_irq wcd9335_codec_irqs[] = {
+ 			.type_reg_mask	= BIT(0),
+ 		},
+ 	},
++	[WCD9335_IRQ_HPH_PA_OCPL_FAULT] = {
++		.reg_offset = 0,
++		.mask = BIT(2),
++	},
++	[WCD9335_IRQ_HPH_PA_OCPR_FAULT] = {
++		.reg_offset = 0,
++		.mask = BIT(3),
++	},
+ };
+ 
+ static const unsigned int wcd9335_config_regs[] = {
+diff --git a/sound/soc/codecs/wcd9335.h b/sound/soc/codecs/wcd9335.h
+index 490fc4414..227509578 100644
+--- a/sound/soc/codecs/wcd9335.h
++++ b/sound/soc/codecs/wcd9335.h
+@@ -626,6 +626,8 @@
+ #define WCD9335_SLIM_PGD_RX_PORT_MULTI_CHNL_0(p) WCD9335_REG(0, (0x140 + 4 * p))
+ 
+ #define	WCD9335_IRQ_SLIMBUS			0
++#define	WCD9335_IRQ_HPH_PA_OCPL_FAULT		2
++#define	WCD9335_IRQ_HPH_PA_OCPR_FAULT		3
+ #define	WCD9335_IRQ_MBHC_SW_DET			8
+ #define	WCD9335_IRQ_MBHC_ELECT_INS_REM_DET	9
+ #define	WCD9335_IRQ_MBHC_BUTTON_PRESS_DET	10

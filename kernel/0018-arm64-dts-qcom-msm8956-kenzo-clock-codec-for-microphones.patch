@@ -1,0 +1,24 @@
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 20:00:00 +0300
+Subject: [PATCH] arm64: dts: qcom: msm8956-xiaomi-kenzo: clock the codec for
+ the microphones
+
+The codec MCLK supply is routed from RX_BIAS only, so a capture without a
+playback running records digital zeros: nothing powers MCLK (09.11.2026 - the
+whole 8 s recording was zeros, and the divclk1 gate stayed off).  Route the MIC
+BIAS supplies to MCLK as on apq8096-db820c.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+--- a/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts	2026-11-09 19:46:36
++++ b/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts	2026-11-09 19:46:44
+@@ -530,6 +530,9 @@
+ 
+ 	audio-routing =
+ 		"RX_BIAS", "MCLK",
++		"MIC BIAS1", "MCLK",
++		"MIC BIAS2", "MCLK",
++		"MIC BIAS3", "MCLK",
+ 		"Speaker Amp INL", "LINEOUT1",
+ 		"Speaker Amp INL", "LINEOUT2",
+ 		"Speaker Amp INR", "LINEOUT3",

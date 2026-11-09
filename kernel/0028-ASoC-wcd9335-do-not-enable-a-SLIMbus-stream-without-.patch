@@ -1,0 +1,51 @@
+From eceb80ac23ee69fe74be80b0b36c8aa7969716f4 Mon Sep 17 00:00:00 2001
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 21:31:46 +0000
+Subject: [PATCH] ASoC: wcd9335: do not enable a SLIMbus stream without
+ channels
+
+hw_params() of a capture DAI starts the SLIMbus stream right away, even
+when no SLIM TX channel is routed to the DAI yet. PipeWire probes the PCM
+before the UCM device connects "AIF1_CAP Mixer SLIM TX0", so the stream
+was enabled with zero channels; the ADSP (the bus master) never answers
+such a channel definition, the NGD message timed out after a second
+(-110, "TX timed out:MC:0x21"), and PipeWire dropped the whole card,
+playback included. Skip enabling a stream that has no channels, for RX as
+well.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+ sound/soc/codecs/wcd9335.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/codecs/wcd9335.c b/sound/soc/codecs/wcd9335.c
+index 4cb29f874..92550d576 100644
+--- a/sound/soc/codecs/wcd9335.c
++++ b/sound/soc/codecs/wcd9335.c
+@@ -1750,6 +1750,15 @@ static int wcd9335_slim_stream_start(struct wcd_slim_codec_dai_data *dai_data)
+ 	if (dai_data->stream_enabled || !dai_data->sruntime)
+ 		return 0;
+ 
++	/*
++	 * No SLIM channel routed to this DAI (e.g. "AIF1_CAP Mixer SLIM TX0"
++	 * still off while userspace probes the PCM): there is nothing to put
++	 * on the bus, and the ADSP never answers a channel definition without
++	 * channels - hw_params() would time out (-110) after a second.
++	 */
++	if (!dai_data->sconfig.ch_count)
++		return 0;
++
+ 	ret = slim_stream_prepare(dai_data->sruntime, &dai_data->sconfig);
+ 	if (ret < 0)
+ 		return ret;
+@@ -1796,7 +1805,9 @@ static int wcd9335_slim_rx_start(struct wcd9335_codec *wcd,
+ 	u16 payload = 0;
+ 	int ret;
+ 
+-	if (dai_data->stream_enabled || !dai_data->sconfig.chs)
++	/* no channels routed: see wcd9335_slim_stream_start() */
++	if (dai_data->stream_enabled || !dai_data->sconfig.chs ||
++	    !dai_data->sconfig.ch_count)
+ 		return 0;
+ 
+ 	list_for_each_entry(ch, &dai_data->slim_ch_list, list)

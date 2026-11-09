@@ -1,0 +1,28 @@
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Subject: [PATCH] clk: qcom: gcc-msm8976: keep the Venus TBU clock on
+
+Keep the Venus TBU clocks always on (CLK_IS_CRITICAL): nothing votes for them on this board.
+One of the experiments around Venus.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+--- a/drivers/clk/qcom/gcc-msm8976.c
++++ b/drivers/clk/qcom/gcc-msm8976.c
+@@ -3692,6 +3692,8 @@
+ 		.enable_mask = BIT(20),
+ 		.hw.init = &(struct clk_init_data){
+ 			.name = "gcc_venus_1_tbu_clk",
++			/* kenzo: голос за TBU видеоблока никто не ставит — держим включённым */
++			.flags = CLK_IS_CRITICAL,
+ 			.ops = &clk_branch2_ops,
+ 		},
+ 	},
+@@ -3705,6 +3707,8 @@
+ 		.enable_mask = BIT(5),
+ 		.hw.init = &(struct clk_init_data){
+ 			.name = "gcc_venus_tbu_clk",
++			/* kenzo: голос за TBU видеоблока никто не ставит — держим включённым */
++			.flags = CLK_IS_CRITICAL,
+ 			.ops = &clk_branch2_ops,
+ 		},
+ 	},

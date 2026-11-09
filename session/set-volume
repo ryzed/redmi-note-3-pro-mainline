@@ -1,0 +1,17 @@
+#!/bin/sh
+# kenzo: громкость звука (выход по умолчанию в PipeWire) — для набора в терминале телефона.
+#   set-volume 50    — 50 %
+#   set-volume +5    — громче на 5 %
+#   set-volume -5    — тише на 5 %
+#   set-volume       — показать
+# Выше 100 % не поднимает: дальше PipeWire усиливает программно и громкий звук хрипит.
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+SINK=@DEFAULT_AUDIO_SINK@
+case "$1" in
+    "") ;;
+    +[0-9]*) wpctl set-volume -l 1.0 "$SINK" "${1#+}%+" ;;
+    -[0-9]*) wpctl set-volume "$SINK" "${1#-}%-" ;;
+    [0-9]*) wpctl set-volume -l 1.0 "$SINK" "$1%" ;;
+    *) echo "set-volume 50 | +5 | -5"; exit 2 ;;
+esac
+wpctl get-volume "$SINK"

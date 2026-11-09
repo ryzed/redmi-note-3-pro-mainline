@@ -1,0 +1,28 @@
+#!/bin/sh
+# kenzo: яркость экрана — для набора в терминале телефона.
+#   set-brightness 30    — 30 %
+#   set-brightness +10   — ярче на 10 %
+#   set-brightness -10   — темнее на 10 %
+#   set-brightness       — показать
+# Ниже 2 % не опускает: на 0 подсветка гаснет совсем. Писать в /sys/class/backlight может группа video;
+# пока сеанс открыт без неё (пользователь добавлен в video 09.11 — действует после перезахода), — через sudo.
+B=/sys/class/backlight/backlight
+max=$(cat "$B/max_brightness")
+cur=$(cat "$B/brightness")
+pct=$(( (cur * 100 + max / 2) / max ))
+case "$1" in
+    "") echo "яркость $pct %"; exit 0 ;;
+    +[0-9]*) pct=$(( pct + ${1#+} )) ;;
+    -[0-9]*) pct=$(( pct - ${1#-} )) ;;
+    [0-9]*) pct=$1 ;;
+    *) echo "set-brightness 30 | +10 | -10"; exit 2 ;;
+esac
+[ "$pct" -lt 2 ] && pct=2
+[ "$pct" -gt 100 ] && pct=100
+raw=$(( (pct * max + 50) / 100 ))
+if [ -w "$B/brightness" ]; then
+    echo "$raw" > "$B/brightness"
+else
+    echo "$raw" | sudo -n tee "$B/brightness" > /dev/null
+fi
+echo "яркость $pct %"

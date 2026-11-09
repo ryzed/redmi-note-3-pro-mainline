@@ -1,0 +1,20 @@
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Subject: [PATCH] arm64: dts: qcom: msm8956-xiaomi-kenzo: wake the touchscreen over I2C SCL
+
+The maXTouch controller sleeps and NAKs the first I2C transfer ("Failed to read T44 and T5"),
+which hung the touchscreen. atmel,wakeup-method = <ATMEL_MXT_WAKEUP_I2C_SCL> makes the driver retry
+after 25 ms.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+--- a/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
++++ b/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
+@@ -123,6 +123,8 @@
+ 	touchscreen@4a {
+ 		compatible = "atmel,maxtouch";
+ 		reg = <0x4a>;
++		/* Контроллер засыпает в простое, первый обмен по I2C его только будит. */
++		atmel,wakeup-method = <ATMEL_MXT_WAKEUP_I2C_SCL>;
+ 		interrupt-parent = <&tlmm>;
+ 		interrupts = <65 IRQ_TYPE_EDGE_FALLING>;
+ 

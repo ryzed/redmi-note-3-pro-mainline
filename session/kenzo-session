@@ -1,0 +1,4 @@
+#!/bin/sh
+# Сеанс X на kenzo: экранная клавиатура, затем оконный менеджер jwm.
+kenzo-osk-toggle on
+exec jwm

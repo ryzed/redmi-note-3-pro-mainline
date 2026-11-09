@@ -1,0 +1,109 @@
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Subject: [PATCH 6/8] arm64: dts: qcom: msm8956: two A72 (cpu4, cpu7), OPP up to 1190.4 MHz, big cluster trips 55/65/85, A72 throttled by cpu0 zone at 65, cpu0/gpu critical 85, ramoops
+
+Assisted-by: Claude:claude-opus-5.5
+
+---
+--- a/arch/arm64/boot/dts/qcom/msm8956.dtsi
++++ b/arch/arm64/boot/dts/qcom/msm8956.dtsi
+@@ -20,3 +20,100 @@
+  * You might be wondering.. why is it so empty out there?
+  * Well, the SoCs are almost identical.
+  */
++
++/*
++ * У MSM8956 два Cortex-A72: cpu4 (cpu@100) и cpu7 (cpu@103), а cpu5 и cpu6
++ * физически нет — PSCI их не поднимает (-22). Так же у zennnez, коммит d7d0c8c
++ * в github.com/zennnez/msm8956-mainline-linux.
++ */
++&cpu5 {
++	status = "disabled";
++};
++
++&cpu6 {
++	status = "disabled";
++};
++
++/*
++ * Частоты A72: 400 и 1190,4 МГц (1612,8 и 1747,2 убраны). Напряжение кластера
++ * держит регулятор vdd_apc1 (pm8004_s2, dts kenzo): без CPR оно не следует за
++ * частотой, поэтому верхние частоты не нужны. Android (apc1_corner) даёт
++ * 1190,4 МГц до 1,05 В — столько и выставлено минимумом vdd_apc1 (патч 0007).
++ */
++&big_cpu_opp_table {
++	/delete-node/ opp-1612800000;
++	/delete-node/ opp-1747200000;
++};
++
++/*
++ * Пороги температуры быстрого кластера. В msm8976.dtsi сброс частоты с 50 °C,
++ * а телефон на зарядке в покое уже ~50 °C — A72 почти всё время на 400 МГц.
++ * A72 включаются после загрузки при vdd_apc1 1,05 В (патчи 0007, 0008), пороги
++ * отвечают только за нагрев: 55 и 65 °C, критический 85 °C. Датчики cpu5 и
++ * cpu6 есть, хотя ядер нет, — их зоны тоже сбрасывают кластер.
++ */
++&cpu4_alert0 { temperature = <55000>; };
++&cpu4_alert1 { temperature = <65000>; };
++&cpu4_crit { temperature = <85000>; };
++&cpu5_alert0 { temperature = <55000>; };
++&cpu5_alert1 { temperature = <65000>; };
++&cpu5_crit { temperature = <85000>; };
++&cpu6_alert0 { temperature = <55000>; };
++&cpu6_alert1 { temperature = <65000>; };
++&cpu6_crit { temperature = <85000>; };
++&cpu7_alert0 { temperature = <55000>; };
++&cpu7_alert1 { temperature = <65000>; };
++&cpu7_crit { temperature = <85000>; };
++&l2_alert0 { temperature = <55000>; };
++&l2_alert1 { temperature = <65000>; };
++&l2_crit { temperature = <85000>; };
++
++/*
++ * Кристалл общий: под долгой нагрузкой на A72 датчик кластера A53 (cpu0-thermal)
++ * доходил до своего критического порога 75 °C — аварийное выключение (06.11,
++ * 572 с полной нагрузки). Его карты охлаждения сбрасывают только A53, поэтому
++ * отдельная точка на 65 °C сбрасывает и A72 — раньше, чем до 75 дойдёт.
++ */
++&{/thermal-zones/cpu0-thermal/trips} {
++	cpu0_alert_a72: trip-point-a72 {
++		temperature = <65000>;
++		hysteresis = <2000>;
++		type = "passive";
++	};
++};
++
++&{/thermal-zones/cpu0-thermal/cooling-maps} {
++	map-a72 {
++		trip = <&cpu0_alert_a72>;
++		cooling-device = <&cpu4 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>,
++				 <&cpu7 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
++	};
++};
++
++/*
++ * Эксперимент 06.11 (решение пользователя): аварийный порог датчиков кластера
++ * A53 и GPU 85 °C вместо 75. С 75 телефон выключался под долгой полной нагрузкой
++ * на зарядке (и раньше, на четырёх A53: видео 1080p60 за ~30 с). Android
++ * выключает эти процессоры при 105–115 °C.
++ */
++&cpu0_crit { temperature = <85000>; };
++&gpu_crit { temperature = <85000>; };
++
++/*
++ * Журнал ядра, переживающий перезагрузку (pstore/ramoops): после падения
++ * последние сообщения — в /sys/fs/pstore, systemd-pstore копирует их в
++ * /var/lib/systemd/pstore. 1 МБ обычной памяти вдали от мест, куда загрузчик
++ * кладёт ядро и initramfs.
++ */
++/ {
++	reserved-memory {
++		ramoops@9ff00000 {
++			compatible = "ramoops";
++			reg = <0x0 0x9ff00000 0x0 0x100000>;
++			console-size = <0x40000>;
++			record-size = <0x40000>;
++			pmsg-size = <0x20000>;
++			no-map;
++		};
++	};
++};

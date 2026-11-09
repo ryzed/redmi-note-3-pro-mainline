@@ -1,0 +1,122 @@
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Subject: [PATCH] media: venus: add MSM8956 support
+
+Resource table for MSM8956 (clocks, power domains, frequency table from the stock kernel).
+Experimental: decoding does not work yet - see docs/venus.md.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+--- a/drivers/media/platform/qcom/venus/core.c
++++ b/drivers/media/platform/qcom/venus/core.c
+@@ -659,6 +659,51 @@
+ 	SET_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend,
+ 				pm_runtime_force_resume)
+ 	SET_RUNTIME_PM_OPS(venus_runtime_suspend, venus_runtime_resume, NULL)
++};
++
++/*
++ * Из андроидного qcom,load-freq-tbl kenzo: на каждую нагрузку — большая из
++ * частот кодера и декодера, без провалов вниз; частоты — те, что есть
++ * в ftbl_vcodec0_clk_src (gcc-msm8976).
++ */
++static const struct freq_tbl msm8956_freq_table[] = {
++	{  979200, 466000000 },	/* 4k UHD @ 30 */
++	{  734400, 466000000 },	/* 1080p @ 90 */
++	{  489600, 466000000 },	/* 1080p @ 60 */
++	{  432000, 400000000 },	/* 720p @ 120 */
++	{  244800, 228570000 },	/* 1080p @ 30 */
++	{  216000, 228570000 },	/* 720p @ 60 */
++	{  108000, 100000000 },	/* 720p @ 30 */
++	{   36000,  80000000 },	/* 480p @ 30 */
++};
++
++static const struct reg_val msm8956_reg_preset[] = {
++	{ 0xe0020, 0x05555556 },
++	{ 0xe0024, 0x05555556 },
++	{ 0x80124, 0x00000003 },
++};
++
++static const struct venus_resources msm8956_res = {
++	.freq_tbl = msm8956_freq_table,
++	.freq_tbl_size = ARRAY_SIZE(msm8956_freq_table),
++	.reg_tbl = msm8956_reg_preset,
++	.reg_tbl_size = ARRAY_SIZE(msm8956_reg_preset),
++	.clks = { "core", "iface", "bus" },
++	.clks_num = 3,
++	/* одно ядро core0 на кодер и декодер — включается с блоком, как у msm8939 */
++	.vcodec_clks = { "vcodec0_core" },
++	.vcodec_clks_num = 1,
++	.vcodec_pmdomains = (const char *[]) { "venus", "vcodec0" },
++	.vcodec_pmdomains_num = 2,
++	.max_load = 979200, /* qcom,max-hw-load андроидного DT */
++	.hfi_version = HFI_VERSION_3XX,
++	.vmem_id = VIDC_RESOURCE_NONE,
++	.vmem_size = 0,
++	.vmem_addr = 0,
++	.dma_mask = 0xddc00000 - 1,
++	.fwname = "qcom/venus-4.1/venus.mdt",
++	.dec_nodename = "video-decoder",
++	.enc_nodename = "video-encoder",
+ };
+ 
+ static const struct freq_tbl msm8916_freq_table[] = {
+@@ -1172,6 +1217,7 @@
+ 
+ static const struct of_device_id venus_dt_match[] = {
+ 	{ .compatible = "qcom,msm8916-venus", .data = &msm8916_res, },
++	{ .compatible = "qcom,msm8956-venus", .data = &msm8956_res, },
+ 	{ .compatible = "qcom,msm8939-venus", .data = &msm8939_res, },
+ 	{ .compatible = "qcom,msm8996-venus", .data = &msm8996_res, },
+ 	{ .compatible = "qcom,msm8998-venus", .data = &msm8998_res, },
+--- a/drivers/media/platform/qcom/venus/pm_helpers.c
++++ b/drivers/media/platform/qcom/venus/pm_helpers.c
+@@ -8,6 +8,7 @@
+ #include <linux/interconnect.h>
+ #include <linux/iopoll.h>
+ #include <linux/kernel.h>
++#include <linux/moduleparam.h>
+ #include <linux/pm_domain.h>
+ #include <linux/pm_opp.h>
+ #include <linux/pm_runtime.h>
+@@ -470,7 +471,21 @@
+ 	.core_power = core_power_v1,
+ 	.load_scale = load_scale_v1,
+ };
++
++/*
++ * msm8956: питание и такт единственного ядра core0 включает core_power_v1
++ * вместе со всем блоком (vcodec_pmdomains). Регистры питания ядер обёртки
++ * 3xx (VDEC/VENC_VCODEC_POWER_CONTROL) рассчитаны на два ядра msm8996 —
++ * для таких SoC их не трогаем; v3_wrapper_ctrl=1 возвращает запись, для проверки.
++ */
++static bool venus_v3_wrapper_ctrl;
++module_param_named(v3_wrapper_ctrl, venus_v3_wrapper_ctrl, bool, 0644);
+ 
++static bool vcodec_v3_skip(struct venus_core *core)
++{
++	return core->res->vcodec_pmdomains && !venus_v3_wrapper_ctrl;
++}
++
+ static void
+ vcodec_control_v3(struct venus_core *core, u32 session_type, bool enable)
+ {
+@@ -499,6 +514,9 @@
+ {
+ 	struct venus_core *core = dev_get_drvdata(dev);
+ 	int ret = 0;
++
++	if (vcodec_v3_skip(core))
++		return 0;
+ 
+ 	vcodec_control_v3(core, VIDC_SESSION_TYPE_DEC, true);
+ 
+@@ -524,6 +542,9 @@
+ {
+ 	struct venus_core *core = dev_get_drvdata(dev);
+ 	int ret = 0;
++
++	if (vcodec_v3_skip(core))
++		return 0;
+ 
+ 	vcodec_control_v3(core, VIDC_SESSION_TYPE_ENC, true);
+ 

@@ -1,0 +1,62 @@
+#!/bin/sh
+# Переключить экран телефона между портретом и альбомом (xrandr --rotate right),
+# кнопка «⟳» в панели jwm. Положение после перезагрузки не хранится: X всегда
+# стартует в портрете.
+#
+# Тач (kenzo-touch) поворот видит сам — слушает RandR. Экранную клавиатуру svkbd
+# ширину под новый экран сама не меняет, поэтому показанную клавиатуру закрываем
+# до поворота и поднимаем заново после: kenzo-osk-toggle растянет её на экран,
+# прижмёт к низу и объявит полосу занятой. Скрытую — не показываем.
+OUTPUT=DSI-1
+PANEL=96        # высота панели jwm, как в ~/.jwmrc
+
+export DISPLAY=${DISPLAY:-:0}
+
+# Двойное нажатие кнопки: второй вызов не ждёт, а выходит.
+lock=${XDG_RUNTIME_DIR:-/tmp}/kenzo-rotate.lock
+exec 9>"$lock"
+flock -n 9 || exit 0
+
+if xrandr --query | grep -q "^$OUTPUT .* right ("; then
+    target=normal
+else
+    target=right
+fi
+
+keyboard=
+[ -n "$(pidof svkbd-mobile-intl)" ] && keyboard=1
+
+# Клавиатуру убираем до поворота, а не после: иначе на миг она торчит за краем
+# экрана и портит рабочую область старой полосой.
+if [ -n "$keyboard" ]; then
+    kill "$(pidof svkbd-mobile-intl)"
+    sleep 0.3
+fi
+
+xrandr --output "$OUTPUT" --rotate "$target" || exit 1
+sleep 0.5
+
+if [ -n "$keyboard" ]; then
+    # Поднимает svkbd, ставит полосу и делает jwm -restart. Дескриптор замка (9)
+    # закрываем: иначе svkbd унаследует его и держит замок, пока жива, — и
+    # следующее нажатие кнопки уйдёт в пустоту.
+    kenzo-osk-toggle on 9>&-
+    sleep 0.5
+fi
+
+# Проверка: рабочая область должна занять экран под панелью и клавиатурой.
+# Если jwm окна не переложил — перезапускаем его.
+eval "$(xdotool getdisplaygeometry --shell)"
+screen_w=$WIDTH
+screen_h=$HEIGHT
+kbd_h=0
+if [ -n "$keyboard" ]; then
+    win=$(xdotool search --onlyvisible --class svkbd | head -1)
+    if [ -n "$win" ]; then
+        eval "$(xdotool getwindowgeometry --shell "$win")"
+        kbd_h=$HEIGHT
+    fi
+fi
+want="0, $PANEL, $screen_w, $((screen_h - PANEL - kbd_h))"
+have=$(xprop -root _NET_WORKAREA | sed 's/.* = //; s/\([^,]*,[^,]*,[^,]*,[^,]*\).*/\1/')
+[ "$have" = "$want" ] || { pidof jwm >/dev/null && jwm -restart; }

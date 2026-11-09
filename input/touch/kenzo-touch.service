@@ -1,0 +1,22 @@
+# Тачскрин как мышь: тап, перетаскивание, удержание — правый клик,
+# два пальца — прокрутка. Исходник — input/touch в репозитории github.com/ryzed/redmi-note-3-pro-mainline.
+#
+# Демон забирает /dev/input/kenzo-touch себе, поэтому X его не видит
+# (/etc/X11/xorg.conf.d/50-touch-ignore.conf) и лишнего левого клика нет.
+#
+# При загрузке демон стартует раньше X и падает, пока X не поднимется;
+# при перезапуске X — тоже. Предел запусков снят (StartLimitIntervalSec=0):
+# иначе после пяти неудач за 10 с systemd бросил бы попытки, и экран
+# остался бы без тача.
+[Unit]
+Description=kenzo-touch — тачскрин как мышь
+StartLimitIntervalSec=0
+
+[Service]
+Environment=DISPLAY=:0
+ExecStart=/usr/local/bin/kenzo-touch -v
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=default.target

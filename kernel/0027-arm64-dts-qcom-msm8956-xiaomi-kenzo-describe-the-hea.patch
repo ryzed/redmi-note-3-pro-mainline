@@ -1,0 +1,38 @@
+From 779a813cd3046cdab7f3a983d9bc1498747feaeb Mon Sep 17 00:00:00 2001
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 21:05:38 +0000
+Subject: [PATCH 27/27] arm64: dts: qcom: msm8956-xiaomi-kenzo: describe the
+ headset jack
+
+Both jack switches are normally closed (stock DT: qcom,msm-mbhc-hphl-swh
+and qcom,msm-mbhc-gnd-swh = <0>); button thresholds as calibrated by the
+stock kernel (75, 260, 750 mV).
+
+Assisted-by: Claude:claude-opus-5.5
+---
+ arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts b/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
+index b4d92ebf4..cb98e3f67 100644
+--- a/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
++++ b/arch/arm64/boot/dts/qcom/msm8956-xiaomi-kenzo.dts
+@@ -520,6 +520,18 @@ wcd9335: codec@1,0 {
+ 			vdd-tx-supply = <&pm8950_l5>;
+ 			vdd-vbat-supply = <&vph_pwr>;
+ 			vdd-io-supply = <&pm8950_l5>;
++
++			/*
++			 * Headset jack (MBHC). Both jack switches are normally
++			 * closed: the stock kenzo DT has qcom,msm-mbhc-hphl-swh
++			 * and qcom,msm-mbhc-gnd-swh = <0>. Button thresholds are
++			 * the ones the stock kernel calibrates tasha with
++			 * (def_tasha_mbhc_cal in msm8952-slimbus.c).
++			 */
++			qcom,hphl-jack-type-normally-closed;
++			qcom,ground-jack-type-normally-closed;
++			qcom,mbhc-buttons-vthreshold-microvolt = <75000 260000 750000 750000
++								  750000 750000 750000 750000>;
+ 		};
+ 	};
+ };

@@ -1,0 +1,204 @@
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 21:00:00 +0300
+Subject: [PATCH] ASoC: qcom: q6afe-dai: start SLIMbus ports after the trigger,
+ stop them from hw_free
+
+Start: the msm8976 ADSP refuses AFE_PORT_CMD_DEVICE_START while the SLIMbus
+channels of the port are not active.  wcd9335 activates its playback channels
+only once its path is powered (patch 0014) - from DAPM, which runs after the
+DAI prepare() - so prepare() only configures a SLIMbus port and the start moves
+after trigger(START).
+
+Nothing waits for the ADSP from trigger(): trigger() runs with the PCM stream
+lock held, and the ASM events (q6asm-dai event_handler() ->
+snd_pcm_period_elapsed(), which takes that lock) arrive on the same APR receive
+path as the AFE replies.  An AFE command waited for from trigger() timed out
+(-110) as soon as an ASM event was queued in front of its reply (a small buffer
+made it happen on the first start), and left the port started on the ADSP side
+("already started", error 9, on every later start).  The start is a work item
+queued from trigger().
+
+Stop: the port keeps running across STOP, pause and a restart without hw_free()
+(XRUN, resume), as on Android, and is stopped from hw_free() (shutdown() is the
+fallback).  hw_free() of the CPU DAI runs before the codec's, so the port stops
+before wcd9335 removes the channels - removing them under a running AFE port
+crashed the msm8976 ADSP and rebooted the SoC (only shutdown() used to stop the
+port, after the codec had torn the channels down).
+
+Only the SLIMbus DAIs change.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+--- a/sound/soc/qcom/qdsp6/q6afe-dai.c	2026-11-09 19:41:50
++++ b/sound/soc/qcom/qdsp6/q6afe-dai.c	2026-11-09 20:19:35
+@@ -9,6 +9,7 @@
+ #include <linux/device.h>
+ #include <linux/platform_device.h>
+ #include <linux/slab.h>
++#include <linux/workqueue.h>
+ #include <sound/pcm.h>
+ #include <sound/soc.h>
+ #include <sound/pcm_params.h>
+@@ -27,11 +28,18 @@
+ 	uint32_t data_align;
+ };
+ 
++/* deferred start of a SLIMbus AFE port, see q6slim_trigger() */
++struct q6afe_slim_start {
++	struct work_struct work;
++	struct snd_soc_dai *dai;
++};
++
+ struct q6afe_dai_data {
+ 	struct q6afe_port *port[AFE_PORT_MAX];
+ 	struct q6afe_port_config port_config[AFE_PORT_MAX];
+ 	bool is_port_started[AFE_PORT_MAX];
+ 	struct q6afe_dai_priv_data priv[AFE_PORT_MAX];
++	struct q6afe_slim_start slim_start[AFE_PORT_MAX];
+ };
+ 
+ static int q6slim_hw_params(struct snd_pcm_substream *substream,
+@@ -727,12 +735,138 @@
+ 	.set_sysclk		= q6afe_mi2s_set_sysclk,
+ };
+ 
+-static const struct snd_soc_dai_ops q6slim_ops = {
+-	.probe			= msm_dai_q6_dai_probe,
+-	.remove			= msm_dai_q6_dai_remove,
+-	.prepare		= q6afe_dai_prepare,
++/*
++ * SLIMbus AFE ports.
++ *
++ * The msm8976 ADSP (MSM8956/MSM8976) refuses AFE_PORT_CMD_DEVICE_START while
++ * the SLIMbus channels of the port are not active, and wcd9335 activates its
++ * playback channels only once its path is powered - from DAPM, which runs after
++ * the DAI prepare().  So the port is configured in prepare() and started after
++ * trigger(START).
++ *
++ * Nothing here waits for the ADSP from trigger(): trigger() runs with the PCM
++ * stream lock held, and the ASM events (q6asm-dai event_handler() ->
++ * snd_pcm_period_elapsed(), which takes that lock) come in on the same APR
++ * receive path as the AFE replies - an AFE command waited for from trigger()
++ * timed out (-110) as soon as an ASM event was queued in front of its reply,
++ * and left the port started on the ADSP side.  The start is deferred to a
++ * work item instead.
++ *
++ * The port keeps running across STOP, pause and a restart without hw_free()
++ * (XRUN, resume), as on Android, and is stopped from hw_free() (and shutdown()),
++ * before the codec removes the channels in its own hw_free(): for playback the
++ * AFE port is the source, and removing the channels under a running AFE port
++ * crashed the msm8976 ADSP and rebooted the SoC.
++ */
++static void q6slim_start_work(struct work_struct *work)
++{
++	struct q6afe_slim_start *start = container_of(work, struct q6afe_slim_start, work);
++	struct snd_soc_dai *dai = start->dai;
++	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
++	int rc;
++
++	if (dai_data->is_port_started[dai->id])
++		return;
++
++	rc = q6afe_port_start(dai_data->port[dai->id]);
++	if (rc < 0) {
++		dev_err(dai->dev, "fail to start AFE port %x\n", dai->id);
++		return;
++	}
++	dai_data->is_port_started[dai->id] = true;
++}
++
++static void q6slim_port_stop(struct snd_soc_dai *dai)
++{
++	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
++	int rc;
++
++	flush_work(&dai_data->slim_start[dai->id].work);
++	if (!dai_data->is_port_started[dai->id])
++		return;
++
++	rc = q6afe_port_stop(dai_data->port[dai->id]);
++	if (rc < 0)
++		dev_err(dai->dev, "fail to close AFE port (%d)\n", rc);
++	dai_data->is_port_started[dai->id] = false;
++}
++
++static int q6slim_prepare(struct snd_pcm_substream *substream,
++			  struct snd_soc_dai *dai)
++{
++	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
++
++	flush_work(&dai_data->slim_start[dai->id].work);
++	/* a restart (XRUN, resume): the port keeps running */
++	if (dai_data->is_port_started[dai->id])
++		return 0;
++
++	q6afe_slim_port_prepare(dai_data->port[dai->id],
++				&dai_data->port_config[dai->id].slim);
++
++	return 0;
++}
++
++static int q6slim_trigger(struct snd_pcm_substream *substream, int cmd,
++			  struct snd_soc_dai *dai)
++{
++	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
++
++	switch (cmd) {
++	case SNDRV_PCM_TRIGGER_START:
++	case SNDRV_PCM_TRIGGER_RESUME:
++	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
++		if (!dai_data->is_port_started[dai->id])
++			schedule_work(&dai_data->slim_start[dai->id].work);
++		break;
++	default:
++		break;
++	}
++
++	return 0;
++}
++
++static int q6slim_hw_free(struct snd_pcm_substream *substream,
++			  struct snd_soc_dai *dai)
++{
++	q6slim_port_stop(dai);
++
++	return 0;
++}
++
++static void q6slim_shutdown(struct snd_pcm_substream *substream,
++			    struct snd_soc_dai *dai)
++{
++	q6slim_port_stop(dai);
++}
++
++static int q6slim_dai_probe(struct snd_soc_dai *dai)
++{
++	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
++
++	dai_data->slim_start[dai->id].dai = dai;
++	INIT_WORK(&dai_data->slim_start[dai->id].work, q6slim_start_work);
++
++	return msm_dai_q6_dai_probe(dai);
++}
++
++static int q6slim_dai_remove(struct snd_soc_dai *dai)
++{
++	struct q6afe_dai_data *dai_data = dev_get_drvdata(dai->dev);
++
++	cancel_work_sync(&dai_data->slim_start[dai->id].work);
++
++	return msm_dai_q6_dai_remove(dai);
++}
++
++static const struct snd_soc_dai_ops q6slim_ops = {
++	.probe			= q6slim_dai_probe,
++	.remove			= q6slim_dai_remove,
++	.prepare		= q6slim_prepare,
+ 	.hw_params		= q6slim_hw_params,
+-	.shutdown		= q6afe_dai_shutdown,
++	.hw_free		= q6slim_hw_free,
++	.trigger		= q6slim_trigger,
++	.shutdown		= q6slim_shutdown,
+ 	.set_channel_map	= q6slim_set_channel_map,
+ };
+ 

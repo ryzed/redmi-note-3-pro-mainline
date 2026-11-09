@@ -1,0 +1,34 @@
+From 597928e38d13101c1ce194905d0f12d6eb9b5a63 Mon Sep 17 00:00:00 2001
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 21:05:37 +0000
+Subject: [PATCH 25/27] ASoC: wcd9335: set the MBHC headset comparator
+ reference for kenzo
+
+Program HS_VREF to 1.7 V, the v_hs_max the downstream msm8952 machine
+driver calibrates tasha with (def_tasha_mbhc_cal). Without it the shared
+MBHC code derives the field from v_hs_max = 0 and ends up at 1.6 V.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+ sound/soc/codecs/wcd9335.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/sound/soc/codecs/wcd9335.c b/sound/soc/codecs/wcd9335.c
+index 63dd097e8..4cb29f874 100644
+--- a/sound/soc/codecs/wcd9335.c
++++ b/sound/soc/codecs/wcd9335.c
+@@ -5292,6 +5292,14 @@ static int wcd9335_probe(struct wcd9335_codec *wcd)
+ 	wcd->mbhc_cfg.num_btn = WCD_MBHC_DEF_BUTTONS;
+ 	wcd->mbhc_cfg.mbhc_micbias = MIC_BIAS_2;
+ 	wcd->mbhc_cfg.anc_micbias = MIC_BIAS_2;
++	/*
++	 * Headset comparator reference (MBHC_CTL_2 HS_VREF): 1.7 V, the value
++	 * the downstream msm8952 machine driver calibrates tasha with
++	 * (def_tasha_mbhc_cal, v_hs_max = 1700). Left at 0 the shared code
++	 * would compute (0 - 1400) / 100 and program whatever the low two
++	 * bits of that happen to be (1.6 V).
++	 */
++	wcd->mbhc_cfg.v_hs_max = 1700;
+ 	wcd_dt_parse_mbhc_data(dev, &wcd->mbhc_cfg);
+ 
+ 	wcd->sido_voltage = SIDO_VOLTAGE_NOMINAL_MV;

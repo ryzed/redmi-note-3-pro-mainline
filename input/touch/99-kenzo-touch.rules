@@ -1,0 +1,7 @@
+# Тачскрин нужен демону kenzo-touch, который работает от пользователя сеанса.
+# uaccess в этой сборке udev не срабатывает (ACL не появляется), поэтому
+# устройство отдаётся группе plugdev — в ней user уже состоит; mode 0660.
+# Матчим по имени устройства, а не по eventN: номер может съехать, и тогда
+# правило отдало бы пользователю чужое устройство. Постоянное имя
+# /dev/input/kenzo-touch — его демон и открывает.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="Atmel maXTouch Touchscreen", GROUP="plugdev", MODE="0660", SYMLINK+="input/kenzo-touch"

@@ -1,0 +1,6 @@
+# Кнопка питания нужна демону kenzo-power, который работает от пользователя
+# сеанса. Матчим по имени устройства: номер eventN может съехать.
+# uaccess в этой сборке udev не срабатывает (ACL не появляется), поэтому
+# устройство отдаётся группе plugdev — в ней user уже состоит; mode 0660.
+# Постоянное имя /dev/input/kenzo-pwrkey — его демон и открывает.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="pm8941_pwrkey", GROUP="plugdev", MODE="0660", SYMLINK+="input/kenzo-pwrkey"

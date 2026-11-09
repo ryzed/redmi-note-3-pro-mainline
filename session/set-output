@@ -1,0 +1,31 @@
+#!/bin/sh
+# kenzo: куда идёт звук — динамик или проводные наушники (профиль карты PipeWire из UCM пакета
+# kenzo-audio-config). С ядра r17 выход сам следует за гнездом (хук WirePlumber kenzo-jack-profile.lua):
+# эта команда — ручной выбор, он держится до следующего движения штекера.
+#   set-output speaker      — динамик
+#   set-output headphones   — наушники
+#   set-output              — показать
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+CARD=$(pactl list cards short | awk '/alsa_card.platform-sound/ {print $2; exit}')
+[ -n "$CARD" ] || { echo "нет встроенной звуковой карты в PipeWire"; exit 1; }
+want=
+case "$1" in
+    "") ;;
+    speaker) want=Speaker; pactl set-card-profile "$CARD" "HiFi (Mic, Speaker)" ;;
+    headphones|phones) want=Headphones; pactl set-card-profile "$CARD" "HiFi (Headphones, Mic)" ;;
+    *) echo "set-output speaker | headphones"; exit 2 ;;
+esac
+# смена профиля пересоздаёт выход: дождаться, пока выходом по умолчанию станет новый (старый на миг ещё
+# числится), — иначе следующая set-volume попадает в пустоту («-1 is not a valid ID»)
+i=0
+while [ -n "$want" ] && [ $i -lt 50 ]; do
+    case "$(pactl get-default-sink 2>/dev/null)" in
+        *"HiFi__${want}__sink") wpctl get-volume @DEFAULT_AUDIO_SINK@ >/dev/null 2>&1 && break ;;
+    esac
+    sleep 0.1; i=$((i + 1))
+done
+case "$(pactl list cards | sed -n "/$CARD/,/^Card/p" | sed -n 's/.*Active Profile: //p')" in
+    *Headphones*) echo "наушники" ;;
+    *Speaker*) echo "динамик" ;;
+    *) echo "профиль: $(pactl list cards | sed -n 's/.*Active Profile: //p')" ;;
+esac

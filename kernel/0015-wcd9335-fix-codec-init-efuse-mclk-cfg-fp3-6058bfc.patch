@@ -1,0 +1,52 @@
+From 6058bfc37aec1c387008dfa3762abdf34f845319 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Lajosh=C3=A1zi=2C=20L=C3=A1szl=C3=B3=20Gergely?=
+ <lajoshazilg@gmail.com>
+Date: Sun, 30 Aug 2026 08:06:18 +0200
+Subject: [PATCH] ASoC: wcd9335: fix codec init (efuse sense state and
+ MCLK_CFG)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Select the efuse sense state before enabling sensing, and set MCLK_CFG bit
+2 during codec init. Both are needed for reliable codec bring-up.
+
+Signed-off-by: Lajosházi, László Gergely <lajoshazilg@gmail.com>
+Assisted-by: Claude:claude-opus-4-8
+---
+ sound/soc/codecs/wcd9335.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/sound/soc/codecs/wcd9335.c b/sound/soc/codecs/wcd9335.c
+index 40de279a9750a7..f6dfed9e5b98ec 100644
+--- a/sound/soc/codecs/wcd9335.c
++++ b/sound/soc/codecs/wcd9335.c
+@@ -4746,6 +4746,14 @@ static void wcd9335_enable_sido_buck(struct snd_soc_component *component)
+ static int wcd9335_enable_efuse_sensing(struct snd_soc_component *comp)
+ {
+ 	_wcd9335_codec_enable_mclk(comp, true);
++	/*
++	 * Select efuse sense state 0 before enabling. The downstream driver
++	 * clears this field first; without it the sense never completes on some
++	 * parts (EFUSE_STATUS stays 0), which then breaks SLIMbus data ports.
++	 */
++	snd_soc_component_update_bits(comp,
++				      WCD9335_CHIP_TIER_CTRL_EFUSE_CTL,
++				      WCD9335_CHIP_TIER_CTRL_EFUSE_SSTATE_MASK, 0x20);
+ 	snd_soc_component_update_bits(comp,
+ 				WCD9335_CHIP_TIER_CTRL_EFUSE_CTL,
+ 				WCD9335_CHIP_TIER_CTRL_EFUSE_EN_MASK,
+@@ -4779,6 +4787,13 @@ static void wcd9335_codec_init(struct snd_soc_component *component)
+ 	regmap_update_bits(wcd->regmap, WCD9335_CODEC_RPM_CLK_MCLK_CFG,
+ 				WCD9335_CODEC_RPM_CLK_MCLK_CFG_MCLK_MASK,
+ 				WCD9335_CODEC_RPM_CLK_MCLK_CFG_9P6MHZ);
++	/*
++	 * Set MCLK_CFG bit 2, which the downstream driver programs as part of
++	 * its codec register defaults but mainline omits. Without it the codec
++	 * mis-handles the master clock (garbled/silent SLIMbus playback).
++	 */
++	regmap_update_bits(wcd->regmap, WCD9335_CODEC_RPM_CLK_MCLK_CFG,
++			   BIT(2), BIT(2));
+ 
+ 	for (i = 0; i < ARRAY_SIZE(wcd9335_codec_reg_init); i++)
+ 		snd_soc_component_update_bits(component,

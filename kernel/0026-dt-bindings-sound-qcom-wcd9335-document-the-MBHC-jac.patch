@@ -1,0 +1,52 @@
+From a45df81d91a26689e559316350f0a2299975adac Mon Sep 17 00:00:00 2001
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 21:05:38 +0000
+Subject: [PATCH 26/27] dt-bindings: sound: qcom,wcd9335: document the MBHC
+ jack properties
+
+The driver now reads the jack switch types and the button thresholds
+through wcd_dt_parse_mbhc_data(), the same properties the WCD93xx family
+documents in qcom,wcd93xx-common.yaml. Describe them here, and disallow
+them on the SLIMbus interface device like the other codec properties.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+ .../bindings/sound/qcom,wcd9335.yaml           | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/sound/qcom,wcd9335.yaml b/Documentation/devicetree/bindings/sound/qcom,wcd9335.yaml
+index 34f8fe4da..bc97b0f2f 100644
+--- a/Documentation/devicetree/bindings/sound/qcom,wcd9335.yaml
++++ b/Documentation/devicetree/bindings/sound/qcom,wcd9335.yaml
+@@ -73,6 +73,21 @@ properties:
+   vdd-vbat-supply:
+     description: vbat supply
+ 
++  qcom,hphl-jack-type-normally-closed:
++    description: Indicates that HPHL jack switch type is normally closed
++    type: boolean
++
++  qcom,ground-jack-type-normally-closed:
++    description: Indicates that Headset Ground switch type is normally closed
++    type: boolean
++
++  qcom,mbhc-buttons-vthreshold-microvolt:
++    description:
++      Array of 8 voltage threshold values corresponding to headset
++      button0 - button7
++    minItems: 8
++    maxItems: 8
++
+ required:
+   - compatible
+   - reg
+@@ -116,6 +131,9 @@ allOf:
+         vdd-rx-supply: false
+         vdd-tx-supply: false
+         vdd-vbat-supply: false
++        qcom,hphl-jack-type-normally-closed: false
++        qcom,ground-jack-type-normally-closed: false
++        qcom,mbhc-buttons-vthreshold-microvolt: false
+ 
+ additionalProperties: false
+ 

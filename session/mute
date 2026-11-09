@@ -1,0 +1,14 @@
+#!/bin/sh
+# kenzo: «без звука» (выход по умолчанию в PipeWire) — для набора в терминале телефона.
+#   mute       — включить/выключить
+#   mute on    — без звука
+#   mute off   — со звуком
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+SINK=@DEFAULT_AUDIO_SINK@
+case "$1" in
+    "") wpctl set-mute "$SINK" toggle ;;
+    on) wpctl set-mute "$SINK" 1 ;;
+    off) wpctl set-mute "$SINK" 0 ;;
+    *) echo "mute | mute on | mute off"; exit 2 ;;
+esac
+wpctl get-volume "$SINK"

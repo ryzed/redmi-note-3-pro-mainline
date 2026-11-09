@@ -1,0 +1,428 @@
+From: Eduard Ryzhov <1711255+ryzed@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 21:00:00 +0300
+Subject: [PATCH] ASoC: codecs: wcd9335: start the SLIMbus RX stream once the
+ DAC is up
+
+Replaces the earlier 0014 ("enable the SLIMbus stream from hw_params").
+
+The msm8976 ADSP (MSM8956/MSM8976, Xiaomi Redmi Note 3 Pro "kenzo") refuses
+AFE_PORT_CMD_DEVICE_START for a SLIMbus port while the shared channels it names
+are not active, so the channels must be up before the AFE port starts
+(q6afe-dai, patch 0016, starts it after trigger()).
+
+Playback: an RX port bound to an active channel before the interpolator behind
+it runs overflows at once and never recovers - PORT_INT_STATUS 0x82,
+"overflow error on RX port 0", silence.  Every variant that enabled the port
+from hw_params() or from the AIF widget did so, because DAPM powers aif_in
+before the interpolator.  Android (tasha_codec_enable_slimrx ->
+wcd9xxx_cfg_slim_sch_rx) programs the port, connects it and activates the
+channel only after the interpolator, mix path and DAC are powered; Fairphone 3
+(mainline) activates the channel from the codec trigger(), after DAPM.  Here the
+RX stream is started from the DAC PRE_PMU events (EAR, HPHL/HPHR, LINEOUT1-4):
+the interpolator already runs, the AFE port has not started yet.  With this the
+port reads 0x21 during playback, like Android, and the speaker plays.
+
+Stop: the channels stay up across STOP, pause and a restart without hw_free()
+(XRUN, resume), like the AFE port, and are removed from hw_free(), after the CPU
+DAI's hw_free() has stopped the AFE port - the order Android uses (AFE close,
+then channel removal).  For playback the AFE port is the source, and removing
+the channels under a running AFE port crashed the DSP and rebooted the SoC.
+Nothing waits for the bus or the DSP from trigger() any more.  The RX port
+registers are left programmed on stop, as Android does: the channel is removed
+and the port disconnected, PORT_INT_STATUS drops to 0x00; clearing them before
+the disconnect left the port bound (0x21) and made the next start overflow.
+A new prepare() starts the RX stream when hw_free()/hw_params() ran on an open
+stream whose path stays powered.
+
+Capture: the TX stream is still enabled from hw_params(), before the AFE port.
+
+Also: free the stream runtime and the channel list in hw_free() and before a
+repeated hw_params() (they leaked), and drop kfree(sconfig.chs) from the AIF
+POST_PMD handler - the buffer belongs to hw_params()/hw_free(), and freeing it
+there without clearing the pointer was a double free.
+
+Tested on kenzo (09.11.2026, with 0016 and 0017): speaker tones back to back,
+an XRUN restart in the middle of a stream, playback and capture at the same
+time (a 1500 Hz tone recorded as 1500.04 Hz); no overflow, no reboot on stop,
+PORT_INT_STATUS 0x21 during playback and 0x00 after, as on Android.
+
+Assisted-by: Claude:claude-opus-5.5
+---
+--- a/sound/soc/codecs/wcd9335.c	2026-11-09 19:41:50
++++ b/sound/soc/codecs/wcd9335.c	2026-11-09 20:38:24
+@@ -293,6 +293,8 @@
+ 	struct list_head slim_ch_list;
+ 	struct slim_stream_config sconfig;
+ 	struct slim_stream_runtime *sruntime;
++	bool stream_enabled;
++	bool path_powered;	/* playback AIF widget is powered */
+ };
+ 
+ struct wcd9335_codec {
+@@ -326,6 +328,7 @@
+ 	struct wcd_clsh_ctrl *clsh_ctrl;
+ 	u32 hph_mode;
+ 	int prim_int_users[WCD9335_NUM_INTERPOLATORS];
++	int rx_dac_users;	/* powered RX DACs (EAR, HPH, LINEOUT) */
+ 
+ 	int comp_enabled[COMPANDER_MAX];
+ 
+@@ -1712,6 +1715,140 @@
+ 	return 0;
+ }
+ 
++/*
++ * SLIMbus stream order.
++ *
++ * The ADSP of msm8976 (MSM8956/MSM8976, e.g. Xiaomi Redmi Note 3 Pro) refuses
++ * AFE_PORT_CMD_DEVICE_START for a SLIMbus port while the shared channels it
++ * names are not active on the bus, so the channels have to be up before the
++ * AFE port starts (q6afe-dai starts it from trigger()).
++ *
++ * Playback: an RX port that is bound to an active channel before the
++ * interpolator behind it runs overflows at once and never recovers
++ * (PORT_INT_STATUS 0x82, "overflow error on RX port", silence).  Android
++ * (tasha_codec_enable_slimrx -> wcd9xxx_cfg_slim_sch_rx) programs the port,
++ * connects it and activates the channel only after the interpolator, mix path
++ * and DAC are powered; Fairphone 3 does it from trigger(), after DAPM.  DAPM
++ * powers the aif_in widget before the interpolator here, so the RX stream is
++ * started from the DAC PRE_PMU events instead (wcd9335_slim_rx_start_all()),
++ * which still runs before the AFE port is started from trigger().
++ *
++ * Stop: the channels stay up across STOP, pause and a restart without
++ * hw_free() (XRUN, resume), like the AFE port (q6afe-dai).  They are removed
++ * from hw_free(), after the CPU DAI's hw_free() has stopped the AFE port - the
++ * order Android uses (AFE close, then channel removal): for playback the AFE
++ * port is the source, and removing the channels under a running AFE port
++ * crashed the msm8976 ADSP and rebooted the SoC.  Nothing here waits in
++ * trigger().  The RX port registers are left programmed, as Android does: the
++ * channel is removed and the port disconnected, PORT_INT_STATUS drops to 0x00.
++ * Clearing the registers before the disconnect left the port bound (0x21) and
++ * made the next start overflow.
++ *
++ * Capture: the TX stream is enabled from hw_params(), before the AFE port.
++ */
++static int wcd9335_slim_stream_start(struct wcd_slim_codec_dai_data *dai_data)
++{
++	int ret;
++
++	/* no runtime: hw_params() has not run since hw_free() */
++	if (dai_data->stream_enabled || !dai_data->sruntime)
++		return 0;
++
++	ret = slim_stream_prepare(dai_data->sruntime, &dai_data->sconfig);
++	if (ret < 0)
++		return ret;
++
++	ret = slim_stream_enable(dai_data->sruntime);
++	if (ret < 0) {
++		slim_stream_unprepare(dai_data->sruntime);
++		return ret;
++	}
++
++	dai_data->stream_enabled = true;
++
++	return 0;
++}
++
++static void wcd9335_slim_stream_stop(struct wcd_slim_codec_dai_data *dai_data)
++{
++	if (!dai_data->stream_enabled)
++		return;
++
++	slim_stream_disable(dai_data->sruntime);
++	slim_stream_unprepare(dai_data->sruntime);
++	dai_data->stream_enabled = false;
++}
++
++static void wcd9335_slim_stream_release(struct wcd_slim_codec_dai_data *dai_data)
++{
++	wcd9335_slim_stream_stop(dai_data);
++
++	if (dai_data->sruntime) {
++		slim_stream_free(dai_data->sruntime);
++		dai_data->sruntime = NULL;
++	}
++
++	kfree(dai_data->sconfig.chs);
++	dai_data->sconfig.chs = NULL;
++}
++
++/* Program the RX ports of a playback DAI, connect them and activate the channels. */
++static int wcd9335_slim_rx_start(struct wcd9335_codec *wcd,
++				 struct wcd_slim_codec_dai_data *dai_data)
++{
++	struct wcd9335_slim_ch *ch;
++	u16 payload = 0;
++	int ret;
++
++	if (dai_data->stream_enabled || !dai_data->sconfig.chs)
++		return 0;
++
++	list_for_each_entry(ch, &dai_data->slim_ch_list, list)
++		payload |= 1 << ch->shift;
++
++	list_for_each_entry(ch, &dai_data->slim_ch_list, list) {
++		ret = regmap_write(wcd->if_regmap,
++				   WCD9335_SLIM_PGD_RX_PORT_MULTI_CHNL_0(ch->port),
++				   payload);
++		if (ret < 0)
++			return ret;
++
++		/* configure the slave port for water mark and enable */
++		ret = regmap_write(wcd->if_regmap,
++				   WCD9335_SLIM_PGD_RX_PORT_CFG(ch->port),
++				   WCD9335_SLIM_WATER_MARK_VAL);
++		if (ret < 0)
++			return ret;
++	}
++
++	return wcd9335_slim_stream_start(dai_data);
++}
++
++/* An RX DAC is about to power up: its interpolator runs, start the RX streams. */
++static void wcd9335_slim_rx_start_all(struct wcd9335_codec *wcd)
++{
++	struct wcd_slim_codec_dai_data *dai_data;
++	int i, ret;
++
++	wcd->rx_dac_users++;
++
++	for (i = 0; i < NUM_CODEC_DAIS; i++) {
++		dai_data = &wcd->dai[i];
++		if (!dai_data->path_powered)
++			continue;
++		ret = wcd9335_slim_rx_start(wcd, dai_data);
++		if (ret < 0)
++			dev_err(wcd->dev, "cannot start SLIM RX stream of DAI %d: %d\n",
++				i, ret);
++	}
++}
++
++static void wcd9335_slim_rx_dac_down(struct wcd9335_codec *wcd)
++{
++	if (wcd->rx_dac_users > 0)
++		wcd->rx_dac_users--;
++}
++
+ static int wcd9335_slim_set_hw_params(struct wcd9335_codec *wcd,
+ 				 struct wcd_slim_codec_dai_data *dai_data,
+ 				 int direction)
+@@ -1722,6 +1859,13 @@
+ 	u16 payload = 0;
+ 	int ret, i;
+ 
++	/*
++	 * hw_params() can run again without an intervening STOP (the stream is
++	 * re-negotiated); release the stream and the channel list of the
++	 * previous call so neither the runtime nor its channels leak.
++	 */
++	wcd9335_slim_stream_release(dai_data);
++
+ 	cfg->ch_count = 0;
+ 	cfg->direction = direction;
+ 	cfg->port_mask = 0;
+@@ -1741,20 +1885,8 @@
+ 	list_for_each_entry(ch, slim_ch_list, list) {
+ 		cfg->chs[i++] = ch->ch_num;
+ 		if (direction == SNDRV_PCM_STREAM_PLAYBACK) {
+-			/* write to interface device */
+-			ret = regmap_write(wcd->if_regmap,
+-				WCD9335_SLIM_PGD_RX_PORT_MULTI_CHNL_0(ch->port),
+-				payload);
+-
+-			if (ret < 0)
+-				goto err;
+-
+-			/* configure the slave port for water mark and enable*/
+-			ret = regmap_write(wcd->if_regmap,
+-					WCD9335_SLIM_PGD_RX_PORT_CFG(ch->port),
+-					WCD9335_SLIM_WATER_MARK_VAL);
+-			if (ret < 0)
+-				goto err;
++			/* RX ports are programmed by wcd9335_slim_rx_start() */
++			continue;
+ 		} else {
+ 			ret = regmap_write(wcd->if_regmap,
+ 				WCD9335_SLIM_PGD_TX_PORT_MULTI_CHNL_0(ch->port),
+@@ -1949,8 +2081,17 @@
+ 	}
+ 
+ 	wcd->dai[dai->id].sconfig.rate = params_rate(params);
+-	wcd9335_slim_set_hw_params(wcd, &wcd->dai[dai->id], substream->stream);
++	ret = wcd9335_slim_set_hw_params(wcd, &wcd->dai[dai->id], substream->stream);
++	if (ret < 0)
++		return ret;
+ 
++	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
++		return wcd9335_slim_stream_start(&wcd->dai[dai->id]);
++
++	/* re-negotiated while the path stays up: DAC PRE_PMU will not run again */
++	if (wcd->dai[dai->id].path_powered && wcd->rx_dac_users)
++		return wcd9335_slim_rx_start(wcd, &wcd->dai[dai->id]);
++
+ 	return 0;
+ }
+ 
+@@ -1959,7 +2100,6 @@
+ {
+ 	struct wcd_slim_codec_dai_data *dai_data;
+ 	struct wcd9335_codec *wcd;
+-	struct slim_stream_config *cfg;
+ 
+ 	wcd = snd_soc_component_get_drvdata(dai->component);
+ 
+@@ -1969,15 +2109,22 @@
+ 	case SNDRV_PCM_TRIGGER_START:
+ 	case SNDRV_PCM_TRIGGER_RESUME:
+ 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
+-		cfg = &dai_data->sconfig;
+-		slim_stream_prepare(dai_data->sruntime, cfg);
+-		slim_stream_enable(dai_data->sruntime);
+-		break;
++		/*
++		 * Normally already started (RX from the DAC, TX from hw_params()
++		 * or prepare()); the CPU DAI is triggered first and needs the
++		 * channels active by now.
++		 */
++		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
++			return wcd9335_slim_rx_start(wcd, dai_data);
++		return wcd9335_slim_stream_start(dai_data);
+ 	case SNDRV_PCM_TRIGGER_STOP:
+ 	case SNDRV_PCM_TRIGGER_SUSPEND:
+ 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
+-		slim_stream_disable(dai_data->sruntime);
+-		slim_stream_unprepare(dai_data->sruntime);
++		/*
++		 * The channels stay up until hw_free(): the AFE port keeps
++		 * running across STOP, pause and a restart (q6afe-dai) and is
++		 * stopped from the CPU DAI's hw_free(), which runs before ours.
++		 */
+ 		break;
+ 	default:
+ 		break;
+@@ -2065,8 +2212,44 @@
+ 	return 0;
+ }
+ 
++/*
++ * hw_free() -> hw_params() -> prepare() on an open stream: hw_free() removed the
++ * channels, and the playback path stays powered (DAPM stops it on close), so
++ * DAC PRE_PMU does not run again - start the RX stream here, before the AFE
++ * port starts after trigger().  Capture was started by hw_params() already.
++ */
++static int wcd9335_prepare(struct snd_pcm_substream *substream,
++			   struct snd_soc_dai *dai)
++{
++	struct wcd9335_codec *wcd = snd_soc_component_get_drvdata(dai->component);
++	struct wcd_slim_codec_dai_data *dai_data = &wcd->dai[dai->id];
++
++	if (!dai_data->sconfig.chs)
++		return 0;
++
++	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
++		return wcd9335_slim_stream_start(dai_data);
++
++	if (dai_data->path_powered && wcd->rx_dac_users)
++		return wcd9335_slim_rx_start(wcd, dai_data);
++
++	return 0;
++}
++
++static int wcd9335_hw_free(struct snd_pcm_substream *substream,
++			   struct snd_soc_dai *dai)
++{
++	struct wcd9335_codec *wcd = snd_soc_component_get_drvdata(dai->component);
++
++	wcd9335_slim_stream_release(&wcd->dai[dai->id]);
++
++	return 0;
++}
++
+ static const struct snd_soc_dai_ops wcd9335_dai_ops = {
+ 	.hw_params = wcd9335_hw_params,
++	.prepare = wcd9335_prepare,
++	.hw_free = wcd9335_hw_free,
+ 	.trigger = wcd9335_trigger,
+ 	.set_channel_map = wcd9335_set_channel_map,
+ 	.get_channel_map = wcd9335_get_channel_map,
+@@ -2971,10 +3154,18 @@
+ 	switch (event) {
+ 	case SND_SOC_DAPM_POST_PMU:
+ 		wcd9335_codec_enable_int_port(dai, comp);
++		if (w->id == snd_soc_dapm_aif_in)
++			dai->path_powered = true;
+ 		break;
+ 	case SND_SOC_DAPM_POST_PMD:
+-		kfree(dai->sconfig.chs);
+-
++		/*
++		 * sconfig.chs belongs to hw_params()/hw_free(); freeing it here
++		 * without clearing the pointer freed it twice.  The stream is
++		 * stopped from hw_free(), after the AFE port: removing the
++		 * channels under a running AFE port crashes the msm8976 ADSP.
++		 */
++		if (w->id == snd_soc_dapm_aif_in)
++			dai->path_powered = false;
+ 		break;
+ 	}
+ 
+@@ -3496,6 +3687,7 @@
+ 					 CLS_H_HIFI : hph_mode));
+ 
+ 		wcd9335_codec_hph_mode_config(comp, event, hph_mode);
++		wcd9335_slim_rx_start_all(wcd);
+ 
+ 		break;
+ 	case SND_SOC_DAPM_POST_PMU:
+@@ -3515,6 +3707,7 @@
+ 				WCD_CLSH_STATE_HPHL,
+ 				((hph_mode == CLS_H_LOHIFI) ?
+ 				 CLS_H_HIFI : hph_mode));
++		wcd9335_slim_rx_dac_down(wcd);
+ 		break;
+ 	}
+ 
+@@ -3531,10 +3724,12 @@
+ 	case SND_SOC_DAPM_PRE_PMU:
+ 		wcd_clsh_ctrl_set_state(wcd->clsh_ctrl, WCD_CLSH_EVENT_PRE_DAC,
+ 					WCD_CLSH_STATE_LO, CLS_AB);
++		wcd9335_slim_rx_start_all(wcd);
+ 		break;
+ 	case SND_SOC_DAPM_POST_PMD:
+ 		wcd_clsh_ctrl_set_state(wcd->clsh_ctrl, WCD_CLSH_EVENT_POST_PA,
+ 					WCD_CLSH_STATE_LO, CLS_AB);
++		wcd9335_slim_rx_dac_down(wcd);
+ 		break;
+ 	}
+ 
+@@ -3551,11 +3746,13 @@
+ 	case SND_SOC_DAPM_PRE_PMU:
+ 		wcd_clsh_ctrl_set_state(wcd->clsh_ctrl, WCD_CLSH_EVENT_PRE_DAC,
+ 					WCD_CLSH_STATE_EAR, CLS_H_NORMAL);
++		wcd9335_slim_rx_start_all(wcd);
+ 
+ 		break;
+ 	case SND_SOC_DAPM_POST_PMD:
+ 		wcd_clsh_ctrl_set_state(wcd->clsh_ctrl, WCD_CLSH_EVENT_POST_PA,
+ 					WCD_CLSH_STATE_EAR, CLS_H_NORMAL);
++		wcd9335_slim_rx_dac_down(wcd);
+ 		break;
+ 	}
+ 
+@@ -3652,6 +3849,7 @@
+ 			       CLS_H_HIFI : hph_mode));
+ 
+ 		wcd9335_codec_hph_mode_config(comp, event, hph_mode);
++		wcd9335_slim_rx_start_all(wcd);
+ 
+ 		break;
+ 	case SND_SOC_DAPM_POST_PMD:
+@@ -3665,6 +3863,7 @@
+ 		wcd_clsh_ctrl_set_state(wcd->clsh_ctrl, WCD_CLSH_EVENT_POST_PA,
+ 			     WCD_CLSH_STATE_HPHR, ((hph_mode == CLS_H_LOHIFI) ?
+ 						CLS_H_HIFI : hph_mode));
++		wcd9335_slim_rx_dac_down(wcd);
+ 		break;
+ 	}
+ 

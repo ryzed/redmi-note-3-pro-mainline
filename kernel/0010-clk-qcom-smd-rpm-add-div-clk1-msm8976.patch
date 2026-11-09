@@ -1,0 +1,22 @@
+From df079a1542be3be677d4f9b32e5f3aa9ebc16231 Mon Sep 17 00:00:00 2001
+From: Magicxavi <rolfpeterkesche@googlemail.com>
+Date: Fri, 11 Sep 2026 20:46:49 +0300
+Subject: [PATCH] clk: qcom: smd-rpm: Add RPM_SMD_DIV_CLK1 for MSM8976
+
+---
+ drivers/clk/qcom/clk-smd-rpm.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/clk/qcom/clk-smd-rpm.c b/drivers/clk/qcom/clk-smd-rpm.c
+index 103db984a40b..e10f0336fb4b 100644
+--- a/drivers/clk/qcom/clk-smd-rpm.c
++++ b/drivers/clk/qcom/clk-smd-rpm.c
+@@ -810,6 +810,8 @@ static struct clk_smd_rpm *msm8976_clks[] = {
+ 	[RPM_SMD_BB_CLK1_A_PIN] = &clk_smd_rpm_bb_clk1_a_pin,
+ 	[RPM_SMD_BB_CLK2_PIN] = &clk_smd_rpm_bb_clk2_pin,
+ 	[RPM_SMD_BB_CLK2_A_PIN] = &clk_smd_rpm_bb_clk2_a_pin,
++	[RPM_SMD_DIV_CLK1] = &clk_smd_rpm_div_clk1,
++	[RPM_SMD_DIV_A_CLK1] = &clk_smd_rpm_div_clk1_a,
+ 	[RPM_SMD_DIV_CLK2] = &clk_smd_rpm_div_clk2,
+ 	[RPM_SMD_DIV_A_CLK2] = &clk_smd_rpm_div_clk2_a,
+ 	[RPM_SMD_IPA_CLK] = &clk_smd_rpm_ipa_clk,

@@ -1,0 +1,130 @@
+# Kernel config based on: msm8956_defconfig
+maintainer="Barnabas Czeman <barnabas.czeman@postmarketos.org>"
+_flavor="postmarketos-qcom-msm8956"
+pkgname=linux-$_flavor
+pkgver=7.2.3
+pkgrel=17
+pkgdesc="Close to mainline linux kernel for Qualcomm Snapdragon MSM8953"
+arch="aarch64"
+_carch="arm64"
+url="https://codeberg.org/msm8956-mainline/linux"
+license="GPL-2.0-only"
+options="!strip !check !tracedeps
+	pmb:cross-native
+	pmb:kconfigcheck-community
+"
+makedepends="
+	bison
+	clang
+	elfutils-dev
+	findutils
+	flex
+	linux-headers
+	lld
+	llvm
+	openssl-dev
+	pahole
+	perl
+	postmarketos-installkernel
+	python3
+	zstd
+"
+
+_tag="$pkgver-r0"
+
+source="
+	$pkgname-v$_tag.tar.gz::https://codeberg.org/msm8956-mainline/linux/archive/v$_tag.tar.gz
+	config-$_flavor.aarch64
+	0001-arm64-dts-qcom-msm8976-add-venus-node.patch
+	0002-arm64-dts-qcom-msm8956-kenzo-enable-venus.patch
+	0003-media-venus-add-msm8956-support.patch
+	0004-arm64-dts-qcom-msm8956-kenzo-touchscreen-wakeup.patch
+	0005-clk-qcom-gcc-msm8976-keep-venus-tbu-on.patch
+	0006-msm8956-two-a72-cap-1190.patch
+	0007-msm8956-kenzo-vdd-apc1-1v05.patch
+	0008-arm64-errata-spectre-permit-late-cpu.patch
+	0009-remoteproc-qcom-pas-add-msm8956-msm8976-adsp.patch
+	0010-clk-qcom-smd-rpm-add-div-clk1-msm8976.patch
+	0011-arm64-dts-qcom-msm8976-add-slimbus-qdsp6-adsp.patch
+	0012-arm64-dts-qcom-msm8956-kenzo-add-audio-wcd9335.patch
+	0013-arm64-dts-qcom-msm8956-kenzo-slimbus0-rx-routing-q6afe.patch
+	0014-wcd9335-start-slimbus-rx-stream-once-dac-is-up.patch
+	0015-wcd9335-fix-codec-init-efuse-mclk-cfg-fp3-6058bfc.patch
+	0016-q6afe-dai-start-slimbus-ports-after-trigger-stop-from-hw-free.patch
+	0017-slimbus-qcom-ngd-ctrl-implement-disable-stream-callback.patch
+	0018-arm64-dts-qcom-msm8956-kenzo-clock-codec-for-microphones.patch
+	0019-ASoC-qcom-q6asm-dai-drop-S24_LE.patch
+	0020-ASoC-wcd-mbhc-v2-route-plug-detection-through-a-func.patch
+	0021-ASoC-wcd9335-add-the-headphone-OCP-fault-interrupts.patch
+	0022-ASoC-wcd-mbhc-v2-add-the-legacy-comparator-detection.patch
+	0023-ASoC-wcd-mbhc-v2-let-the-codec-choose-the-detection-.patch
+	0024-ASoC-wcd9335-use-the-shared-MBHC-implementation.patch
+	0025-ASoC-wcd9335-set-the-MBHC-headset-comparator-referen.patch
+	0026-dt-bindings-sound-qcom-wcd9335-document-the-MBHC-jac.patch
+	0027-arm64-dts-qcom-msm8956-xiaomi-kenzo-describe-the-hea.patch
+	0028-ASoC-wcd9335-do-not-enable-a-SLIMbus-stream-without-.patch
+"
+builddir="$srcdir/linux"
+
+prepare() {
+	default_prepare
+	cp "$srcdir/config-$_flavor.$arch" .config
+}
+
+build() {
+	unset LDFLAGS
+	make ARCH="$_carch" LLVM=1 \
+		KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-$_flavor"
+}
+
+package() {
+	mkdir -p "$pkgdir"/boot
+
+	make zinstall modules_install dtbs_install \
+		ARCH="$_carch" \
+		LLVM=1 \
+		INSTALL_PATH="$pkgdir"/boot \
+		INSTALL_MOD_PATH="$pkgdir"/usr \
+		INSTALL_MOD_STRIP=1 \
+		INSTALL_DTBS_PATH="$pkgdir/boot/dtbs"
+	rm -f "$pkgdir"/usr/lib/modules/*/build "$pkgdir"/usr/lib/modules/*/source
+
+	install -Dm644 "$builddir/arch/$_carch/boot/vmlinuz" \
+		"$pkgdir/boot/vmlinuz"
+
+	install -Dm644 "$builddir/include/config/kernel.release" \
+		"$pkgdir/usr/share/kernel/$_flavor/kernel.release"
+}
+
+sha512sums="
+d0e4586fc3c2a376429cfff01b522d7d5155b2e9eed19199cef206fbbd558e6bb76d710660763fdf096c71adbc1699a5bf3ee7bd02b5747a71fb02b4988dda73  linux-postmarketos-qcom-msm8956-v7.2.3-r0.tar.gz
+a530303bf3d176307f26eb0f8429fc532df25259d6d1c6d07958b39fa27b83fa3a3af3f9a04e8cbc5cdd68b573d80061cc92d9d2704e7b92289b54ef14855e39  config-postmarketos-qcom-msm8956.aarch64
+4f5b1a7db16855f5288e1e0dad7f7432b9c4c0f5c273dd92055bb2fbfaac5798e632787e17ab0a83a7bd24efa3867f01d1746820e73e3badd254c9782d957e34  0001-arm64-dts-qcom-msm8976-add-venus-node.patch
+785a35716c5dcada3d1cb968ebdd1fd229e7e0602ee08a91182a3efd8c4e7876461064d2b6ceb816898dd0474d03e6d3ffd2ddbddb569594c083a3d00c4d8647  0002-arm64-dts-qcom-msm8956-kenzo-enable-venus.patch
+883965e8e241601af53953b0de088d009ba8dffb1b394b9d625517a25611277a11a2f825400d07c408e3392a8600560988b4a0a44bc8d6ce5ff2e18b0bec0774  0003-media-venus-add-msm8956-support.patch
+94aef92ce23ddd84d012c0e2ea88a223fb0ddf761507d395c6266c73ebe592005a970a5e11cf5127a1eaf384d6dd7793b88babed44d45ba4d4251eddcce7b1e9  0004-arm64-dts-qcom-msm8956-kenzo-touchscreen-wakeup.patch
+707a215862fd25db86d006f842bbd37e009b3b71f990ab4a647e1d9ad0dbc968163afb9e5ca72250c15922be8d30c256fa8d0284422deab8a5cb1ac568c2caab  0005-clk-qcom-gcc-msm8976-keep-venus-tbu-on.patch
+f2b867469d754864eab322c8b0f42d6acdbb2a87cb4be2d2069d0c5eecd5004f7230a5947c7344910a0d152b264453acce72b80af30726c7dd51ff64323f5ce6  0006-msm8956-two-a72-cap-1190.patch
+1966f5085662573e3165937283b3b826ee6bd37c063d60fdfa6f60469c803fdf07927411f94e7e7c727bec2b48f87ad8a73fcd26baa575b9cef056d2734a31c4  0007-msm8956-kenzo-vdd-apc1-1v05.patch
+74b17bdc2a234161b805e6326bc00da403ad6a049f144b8423550428152d2279a2746c035414b4f370ebe7e735fc1a9f4bc61685308507232e67d8433900fd68  0008-arm64-errata-spectre-permit-late-cpu.patch
+cbf27d02af0ff0eb64c7bcd739f1cabe730407724f7a3f262782c33f73d1f9f6ec23d8b8eaeedf517ccc5819106a2c15e86613745585a975afd50067946d8187  0009-remoteproc-qcom-pas-add-msm8956-msm8976-adsp.patch
+94263ad577f89119420f88dfcc3238ad1de3144dd10e60efe303de7a87b2c40769ff789d34df57343b933bde437bbd40c2bb5f1352a7bdf0c222beb29a454c23  0010-clk-qcom-smd-rpm-add-div-clk1-msm8976.patch
+62472dd60b0103ae228babbdf30fdf23640fc6b5cf12679ad51203c95ef8f089fa033f2830cf450471366049bea23f4e42912fe36ad8331268d2925c5bee3671  0011-arm64-dts-qcom-msm8976-add-slimbus-qdsp6-adsp.patch
+2159f7b336f8435e405cfdb7277db3b6628630a6667325543371ff07b05eafffcc283001ba57780d588ba164c74a6e4233cb4e33b7f2a1ccae5a461c7ec265b8  0012-arm64-dts-qcom-msm8956-kenzo-add-audio-wcd9335.patch
+502aa3252ff1861305283bb5ab98c89bd0f941c92b249f222fcfcb00437bb6112cfee16464ba1a05b304e701afd4808be9e60f12582839dc60283a33a9c821bb  0013-arm64-dts-qcom-msm8956-kenzo-slimbus0-rx-routing-q6afe.patch
+f91fc0a23c196c0696cd10f4291cba8fb47c34c6014f9525ded7f1962c18cdde1a3a37cacfbaab8c933f82c3ec45ea1bce38b0fb3af600af6e881b79f50e032e  0014-wcd9335-start-slimbus-rx-stream-once-dac-is-up.patch
+6a03aadf72e8e1510fbdb10c96330508a19a450ccb5481889d4bfa58718fe4bc4668054cdb5233301e1344ea046eee68b773634fe5e2218daa19b05c45e57f5e  0015-wcd9335-fix-codec-init-efuse-mclk-cfg-fp3-6058bfc.patch
+f20c32be247e23582a311c14cd82cca9b15bfcb288ff33bb4801f526745ef40fe363011732e6fbf7b93a755a5ecc0a74bc53dca9db58343287db8c4d1d9c16d8  0016-q6afe-dai-start-slimbus-ports-after-trigger-stop-from-hw-free.patch
+7928824ec95b28e53abbb8802d321bd87e34cd399d3269c626b10dc6241892f072c2e2cbc074755fa8e8e244ea4b575fd0fe9ad56faf03dc3e6c7b17475bd99c  0017-slimbus-qcom-ngd-ctrl-implement-disable-stream-callback.patch
+40ec32e72f065de76b248f0ffce9608beabdb415d1a41d04e704f505e24cf14263dded518988e5c86202cd20906d8c9f498e7a2e58ec8ad7ab28122dc5b59ba1  0018-arm64-dts-qcom-msm8956-kenzo-clock-codec-for-microphones.patch
+a44fb5b5e5ce334c9c401fd011e386826b6fb9dea1f480be0e89c698c788c82b089da8c015dbcd05898e06dbd87bd92e258a22c7daa347eeb3d13b8b30c74549  0019-ASoC-qcom-q6asm-dai-drop-S24_LE.patch
+84c4e0dde35143088c1045ef944f13521d346a840911f3650fe4c780fc2841216c1d701a41403ccd42c81bc05fd4b09e4aac8b92dd7b1624f67cdbaf4808422f  0020-ASoC-wcd-mbhc-v2-route-plug-detection-through-a-func.patch
+1c3bf7cc9aaa30fa00f8aa9f7aa189a1df8e6a951e51703f36a81a8d20bf5a598efefc7e9bfb29973b6e8c492aea349506836c8e8f008782ec087eaaf5f55c7b  0021-ASoC-wcd9335-add-the-headphone-OCP-fault-interrupts.patch
+f56c57397652cb9a2316815ebecc35f206978fc3ed9436836d6cd7188a43eb45bdf8dc17be167f1e4899a0f0bc08bdf904f67961b24743ef8bc6e2b33c326944  0022-ASoC-wcd-mbhc-v2-add-the-legacy-comparator-detection.patch
+ce3447e89fefb7ae39ae0da02ac5b0521e0f62525216046d8e9830e31bf3b240d8f940ffe94ef94863c3ad195edc5d3c18350fd69973d68a488b5f324089ced3  0023-ASoC-wcd-mbhc-v2-let-the-codec-choose-the-detection-.patch
+3b79355f576b37284d025df60076aa5b4c40ea77c30e781e22026b9aa9173210e963c8d841440c8b534736bcfb8b431dc2d4e15e97dd64fa48b937490ba162a5  0024-ASoC-wcd9335-use-the-shared-MBHC-implementation.patch
+29842a063ccf817680a3c6b51122be1cb32b6eb0562026265d3601ce00be8fa402b149da4c0daa9b37b86f09bbabb6ae5064eb71c2b05be644594e3e808b6b57  0025-ASoC-wcd9335-set-the-MBHC-headset-comparator-referen.patch
+3910f6e2529c7f6bd06a0551ea6a4f6819831ed0aacadb55a8825d4a9a4e3bc234b3d97cf8190b9861819753265ec7fa7e55f56d824bbd515cf6cb3cda61bd9f  0026-dt-bindings-sound-qcom-wcd9335-document-the-MBHC-jac.patch
+c0585904adc7be384d98eea669d7f733b1e5d641be56e9ebeeb0f7262ec0e28c87cd2e00da6d55adc82d96c90c36c13c4ae9ad9f8028a6c0cf27bbd4e8975ead  0027-arm64-dts-qcom-msm8956-xiaomi-kenzo-describe-the-hea.patch
+5ebe61cc5643a667c86ac9e7334290e959610de9fdfdd876b15ab4e6a2b6d86fec72f605186615529daaaf0b8eeabfe6b8928f12846f7a6901d7a8907767aa86  0028-ASoC-wcd9335-do-not-enable-a-SLIMbus-stream-without-.patch
+"
