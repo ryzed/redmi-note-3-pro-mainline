@@ -1,9 +1,15 @@
 # kenzo-battery
 
-Battery charge as text in the jwm panel: "82%", while charging "⚡82%", in red
-below 15 %. The data comes from `/sys/class/power_supply/qcom-battery`
-(`capacity`, `status`), every 30 s. The font and colors are the same as the
-panel clock (`DejaVu Sans` 27 px, `#FFFFFF` on `#202830`).
+Battery charge as text in the jwm panel: "82%", while charging "⚡82%", charging
+paused by the charge limit "‖82%", in red below 15 %. The data comes from
+`/sys/class/power_supply/qcom-battery` (`capacity`, `status`) and
+`qcom-smbchg-usb` (`online`, `charging_enabled` — kernel release 18). The label
+is updated at once on a kernel event (a `power_supply` uevent: cable plugged or
+unplugged, charging paused or resumed; no root needed to listen) and every 30 s,
+because the percentage changes without events. The font and colors are the same
+as the panel clock (`DejaVu Sans` 27 px, `#FFFFFF` on `#202830`).
+
+The charge limit itself: [charge-limit](charge-limit).
 
 ```
 apk add gcc musl-dev libx11-dev libxft-dev make   # build dependencies

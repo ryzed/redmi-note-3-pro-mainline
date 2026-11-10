@@ -1,6 +1,6 @@
-# Kernel: linux-postmarketos-qcom-msm8956 7.2.3, release 17
+# Kernel: linux-postmarketos-qcom-msm8956 7.2.3, release 18
 
-A pmbootstrap recipe (`APKBUILD`, config, 28 patches) on top of the postmarketOS/Nura package
+A pmbootstrap recipe (`APKBUILD`, config, 29 patches) on top of the postmarketOS/Nura package
 `linux-postmarketos-qcom-msm8956` 7.2.3-r0 (source: [codeberg msm8956-mainline/linux](https://codeberg.org/msm8956-mainline/linux),
 tag `v7.2.3-r0`). This is the kernel running on the author's kenzo since 2026-11-10.
 
@@ -32,6 +32,7 @@ Some patches written here carry Russian code comments; the commit messages are i
 | 0026 | dt-bindings: document the MBHC jack properties of qcom,wcd9335 | this repo | — |
 | 0027 | kenzo DT: headset jack — both switches normally closed, button thresholds | this repo | works |
 | 0028 | wcd9335: do not enable a SLIMbus stream without channels (PipeWire lost the whole card otherwise) | this repo | works |
+| 0029 | qcom-smbchg: `charging_enabled` attribute on `qcom-smbchg-usb` — pause battery charging while the phone keeps running from the charger (for a charge limit, see [../battery/charge-limit](../battery/charge-limit)) | zennnez, [zennnez/msm8956-mainline-linux](https://github.com/zennnez/msm8956-mainline-linux) 41bfbcd, unchanged | works |
 
 Patches marked "this repo" were written by Claude (Anthropic, Claude Opus 5.5) under the direction of Eduard Ryzhov
 and carry an `Assisted-by:` line; they have no `Signed-off-by` and were not submitted anywhere. Each was tested on
@@ -48,7 +49,7 @@ pmbootstrap checksum linux-postmarketos-qcom-msm8956   # only if you changed som
 pmbootstrap build linux-postmarketos-qcom-msm8956
 ```
 
-The package lands in `<work>/packages/edge/aarch64/linux-postmarketos-qcom-msm8956-7.2.3-r17.apk`. On an
+The package lands in `<work>/packages/edge/aarch64/linux-postmarketos-qcom-msm8956-7.2.3-r18.apk`. On an
 8-thread x86-64 machine with a warm ccache a rebuild takes about 10 minutes.
 
 ## Install
@@ -57,7 +58,7 @@ On the phone (as root, from a service so a dropped ssh session does not interrup
 
 ```sh
 systemd-run --unit=kernel-install --collect --wait sh -c \
-  'apk add --allow-untrusted /home/user/linux-postmarketos-qcom-msm8956-7.2.3-r17.apk; sync'
+  'apk add --allow-untrusted /home/user/linux-postmarketos-qcom-msm8956-7.2.3-r18.apk; sync'
 reboot
 ```
 

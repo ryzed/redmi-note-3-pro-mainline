@@ -13,8 +13,9 @@ edge, port `qcom-msm8956` (testing). Bootloader lk2nd in the `boot` partition, t
   [../input/touch](../input/touch).
 - Wi-Fi (`wcn36xx`), Bluetooth (headphones over PipeWire work).
 - Battery and charging (`/sys/class/power_supply/qcom-battery`); the charger limits a wall charger to 1 A, a computer
-  USB port gives 500 mA and the phone discharges under load.
-- Built-in audio — kernel release 17, see [audio.md](audio.md).
+  USB port gives 500 mA and the phone discharges under load. Charge limit (pause at 80 %, resume at 70 %) — kernel
+  release 18, see [../battery/charge-limit](../battery/charge-limit).
+- Built-in audio — since kernel release 17, see [audio.md](audio.md).
 - Both Cortex-A72 — under observation, see [a72.md](a72.md).
 - 12 temperature sensors, the SD card slot.
 
@@ -29,6 +30,14 @@ Hardware video decoding ([venus.md](venus.md)), camera, modem, motion and light 
   `/sys/class/drm/card0-DSI-1/dpms`; `xset q` keeps saying "Monitor is Off" after wake-up.
 - **Power key.** `postmarketos-base-systemd` sets `HandlePowerKey=ignore`; a user cannot power off without polkit
   answering `challenge` (no agent in a bare X session). See [../input/power](../input/power).
+- **"Charger error" — open problem.** The PMI8950 charger often raises chg-error (in 7 of 25 boots, from 13 s to about
+  an hour after boot; the driver only logs `qcom-smbchg … Charger error`) and stops charging until a reboot: on a wall
+  charger the phone then sits at the same percentage, status `Discharging`, battery current about zero. The battery
+  over-voltage bit is set at that moment (`BAT_IF_RT_STS` 0x1210 = 0x10, `CHGR_RT_STS` 0x1010 = 0x01) although the
+  battery reads 4.08 V. Writing 0 and then 1 to `charging_enabled` (release 18) clears both bits and charging resumes —
+  but under ~0.7 A the battery voltage jumps straight to 4.40 V, the float voltage, and the error may come back within
+  seconds. The working guess is an old battery with high internal resistance (~0.4 Ω); not proven. Registers can be
+  read with `dd if=/sys/kernel/debug/regmap/0-02/registers bs=9 skip=$((0x1010)) count=1` (root).
 - **RTC** (`rtc-pm8xxx`) sits at 1970 and is read-only (`rtc@6000` has no `allow-set-time`); until NTP the time comes
   from the last shutdown (`/var/lib/systemd/timesync/clock`).
 - **IPv6.** If the router announces an IPv6 route without an address, programs stumble over AAAA records. The author

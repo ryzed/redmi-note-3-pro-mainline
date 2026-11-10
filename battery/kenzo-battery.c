@@ -1,8 +1,10 @@
 /*
  * kenzo-battery: заряд батареи текстом в панели jwm (Redmi Note 3 «kenzo»).
  *
- * Окно 110×96 цвета панели с надписью «82%»; при зарядке — «⚡82%», ниже 15 % —
- * красным. Данные — /sys/class/power_supply/qcom-battery (capacity, status),
+ * Окно 110×96 цвета панели с надписью «82%»; при зарядке — «⚡82%», зарядка на
+ * паузе по порогу — «‖82%», ниже 15 % — красным. Данные —
+ * /sys/class/power_supply/qcom-battery (capacity, status) и qcom-smbchg-usb
+ * (online, charging_enabled) — сразу по событию ядра о батарее или заряднике и
  * раз в 30 с. Вставляется в <Tray> файла ~/.jwmrc:
  *   <Swallow name="kenzo-battery" width="110">kenzo-battery</Swallow>
  *
@@ -15,18 +17,23 @@
 #include <X11/Xutil.h>
 #include <X11/Xft/Xft.h>
 #include <errno.h>
+#include <linux/netlink.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/select.h>
+#include <sys/socket.h>
 #include <time.h>
+#include <unistd.h>
 
 #define BATTERY "/sys/class/power_supply/qcom-battery"
+#define CHARGER "/sys/class/power_supply/qcom-smbchg-usb"
 #define FONT "DejaVu Sans:pixelsize=27"   /* как Clock в ~/.jwmrc (DejaVu Sans-20) */
 #define COLOR_BG "#202830"                /* TrayStyle Background */
 #define COLOR_FG "#FFFFFF"                /* TrayStyle Foreground */
 #define COLOR_LOW "#FF5555"
 #define LOW_LEVEL 15
 #define PERIOD_S 30
+#define SETTLE_S 2      /* повторное чтение после события: зарядник договаривается с сетью */
 #define WIDTH 110
 #define HEIGHT 96
 
@@ -66,6 +73,22 @@ static int read_line(const char *path, char *buf, size_t size)
     return 0;
 }
 
+/*
+ * Зарядка на паузе: кабель в сети, а порог заряда (служба kenzo-batteryd) её
+ * выключил — телефон живёт от сети, батарея стоит. Статус батареи тогда
+ * «Discharging», как и без кабеля, поэтому смотрим зарядник. Нет
+ * charging_enabled (ядро до r18) — паузы не бывает.
+ */
+static int charge_paused(void)
+{
+    char online[8];
+    char enabled[8];
+
+    return read_line(CHARGER "/online", online, sizeof online) == 0
+        && read_line(CHARGER "/charging_enabled", enabled, sizeof enabled) == 0
+        && strcmp(online, "1") == 0 && strcmp(enabled, "0") == 0;
+}
+
 static void read_battery(struct indicator *ind)
 {
     char capacity[16];
@@ -81,8 +104,60 @@ static void read_battery(struct indicator *ind)
     if (read_line(BATTERY "/status", status, sizeof status) != 0)
         status[0] = '\0';
     snprintf(ind->text, sizeof ind->text, "%s%d%%",
-             strcmp(status, "Charging") == 0 ? "⚡" : "", level);
+             strcmp(status, "Charging") == 0 ? "⚡" : charge_paused() ? "‖" : "", level);
     ind->is_low = level < LOW_LEVEL;
+}
+
+/*
+ * События ядра (uevent) о батарее и заряднике: кабель вставили или вынули,
+ * служба порога переключила charging_enabled — надпись меняется сразу, а не
+ * при следующем опросе (10.11: значок паузы появлялся через полминуты после
+ * того, как кабель вставили обратно). Слушать события ядра можно без root.
+ * -1 — не вышло, остаётся опрос раз в PERIOD_S.
+ */
+static int open_uevents(void)
+{
+    struct sockaddr_nl addr = { 0 };
+    int fd = socket(AF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
+                    NETLINK_KOBJECT_UEVENT);
+
+    if (fd < 0)
+        return -1;
+    addr.nl_family = AF_NETLINK;
+    addr.nl_groups = 1;     /* события самого ядра, не пересказ udev */
+    if (bind(fd, (struct sockaddr *)&addr, sizeof addr) < 0) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+/*
+ * Вычитать все ждущие события; 1 — среди них было про power_supply. Событие —
+ * строки через '\0': «change@<путь>», затем «КЛЮЧ=значение».
+ */
+static int drain_uevents(int fd)
+{
+    char buf[4096];
+    int hit = 0;
+
+    for (;;) {
+        ssize_t n = recv(fd, buf, sizeof buf - 1, 0);
+        char *p;
+
+        if (n < 0) {
+            if (errno == ENOBUFS) {     /* очередь переполнилась — что-то пропустили */
+                hit = 1;
+                continue;
+            }
+            break;                      /* EAGAIN — всё вычитано */
+        }
+        buf[n] = '\0';
+        for (p = buf; p < buf + n; p += strlen(p) + 1)
+            if (strcmp(p, "SUBSYSTEM=power_supply") == 0)
+                hit = 1;
+    }
+    return hit;
 }
 
 /*
@@ -161,6 +236,7 @@ int main(void)
     int screen;
     Window root;
     int x_fd;
+    int uevent_fd;
     time_t next_update;
 
     ind.dpy = XOpenDisplay(NULL);
@@ -196,12 +272,21 @@ int main(void)
     XMapWindow(ind.dpy, ind.win);
 
     x_fd = ConnectionNumber(ind.dpy);
+    uevent_fd = open_uevents();
+    if (uevent_fd < 0)
+        perror("kenzo-battery: события ядра недоступны, только опрос");
     next_update = time(NULL) + PERIOD_S;
 
     for (;;) {
         struct timeval timeout = { 0, 0 };
         time_t now;
         fd_set fds;
+
+        if (uevent_fd >= 0 && drain_uevents(uevent_fd)) {
+            read_battery(&ind);
+            paint(&ind);
+            next_update = time(NULL) + SETTLE_S;
+        }
 
         while (XPending(ind.dpy)) {
             XEvent ev;
@@ -230,7 +315,10 @@ int main(void)
             }
         }
 
-        /* срок обновления фиксированный: частые события X его не отодвигают */
+        /*
+         * Срок обновления фиксированный: частые события X его не отодвигают. Опрос
+         * остаётся и при событиях ядра — заряд в процентах меняется без них.
+         */
         now = time(NULL);
         if (now >= next_update) {
             read_battery(&ind);
@@ -241,7 +329,10 @@ int main(void)
 
         FD_ZERO(&fds);
         FD_SET(x_fd, &fds);
-        if (select(x_fd + 1, &fds, NULL, NULL, &timeout) < 0 && errno != EINTR) {
+        if (uevent_fd >= 0)
+            FD_SET(uevent_fd, &fds);
+        if (select((uevent_fd > x_fd ? uevent_fd : x_fd) + 1, &fds, NULL, NULL,
+                   &timeout) < 0 && errno != EINTR) {
             perror("kenzo-battery: select");
             return 1;
         }

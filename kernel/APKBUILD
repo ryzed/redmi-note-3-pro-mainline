@@ -3,7 +3,7 @@ maintainer="Barnabas Czeman <barnabas.czeman@postmarketos.org>"
 _flavor="postmarketos-qcom-msm8956"
 pkgname=linux-$_flavor
 pkgver=7.2.3
-pkgrel=17
+pkgrel=18
 pkgdesc="Close to mainline linux kernel for Qualcomm Snapdragon MSM8953"
 arch="aarch64"
 _carch="arm64"
@@ -63,6 +63,7 @@ source="
 	0026-dt-bindings-sound-qcom-wcd9335-document-the-MBHC-jac.patch
 	0027-arm64-dts-qcom-msm8956-xiaomi-kenzo-describe-the-hea.patch
 	0028-ASoC-wcd9335-do-not-enable-a-SLIMbus-stream-without-.patch
+	0029-power-supply-qcom-smbchg-Add-charging_enabled-sysfs-.patch
 "
 builddir="$srcdir/linux"
 
@@ -127,4 +128,5 @@ ce3447e89fefb7ae39ae0da02ac5b0521e0f62525216046d8e9830e31bf3b240d8f940ffe94ef948
 3910f6e2529c7f6bd06a0551ea6a4f6819831ed0aacadb55a8825d4a9a4e3bc234b3d97cf8190b9861819753265ec7fa7e55f56d824bbd515cf6cb3cda61bd9f  0026-dt-bindings-sound-qcom-wcd9335-document-the-MBHC-jac.patch
 c0585904adc7be384d98eea669d7f733b1e5d641be56e9ebeeb0f7262ec0e28c87cd2e00da6d55adc82d96c90c36c13c4ae9ad9f8028a6c0cf27bbd4e8975ead  0027-arm64-dts-qcom-msm8956-xiaomi-kenzo-describe-the-hea.patch
 5ebe61cc5643a667c86ac9e7334290e959610de9fdfdd876b15ab4e6a2b6d86fec72f605186615529daaaf0b8eeabfe6b8928f12846f7a6901d7a8907767aa86  0028-ASoC-wcd9335-do-not-enable-a-SLIMbus-stream-without-.patch
+f211112249c4472e4e73b9ac879609b0df6348ce0c38c49c65cd4b6c69e4782c9677f628885aa64df6aa0a01d09984dff03275bafd35f72cee23fa4186b317f8  0029-power-supply-qcom-smbchg-Add-charging_enabled-sysfs-.patch
 "
