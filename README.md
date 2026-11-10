@@ -8,13 +8,13 @@ This is one person's test phone, not a maintained port. Everything here was chec
 (2 GB / 16 GB variant).
 
 <p align="center">
-  <img src="docs/img/speaker.png" width="300" alt="Terminal on the phone: kernel 7.2.3, Cortex-A53 and Cortex-A72, 6 cores, sound card xiaomi-kenzo, default output the speaker, headset jack off">
+  <img src="docs/img/speaker.png" width="300" alt="Terminal on the phone: kernel 7.2.3, Cortex-A53 and Cortex-A72, 6 cores, sound card xiaomi-kenzo, default output the speaker, headset jack off, charging_enabled 0; the panel shows the battery as ‖82%">
   &nbsp;
   <img src="docs/img/headphones.png" width="300" alt="The same with headphones plugged in: default output the headphones, headset jack on">
 </p>
 <p align="center"><sub>Left: nothing in the jack — sound goes to the speaker. Right: headphones plugged in — PipeWire
-moved to them by itself. On top the jwm panel with the battery indicator and the keyboard and rotate buttons; at the
-bottom the svkbd on-screen keyboard.</sub></p>
+moved to them by itself. On top the jwm panel with the battery indicator ("‖82%": on the charger, charging paused by
+the charge limit) and the keyboard and rotate buttons; at the bottom the svkbd on-screen keyboard.</sub></p>
 
 ## Status (2026-11-10)
 
